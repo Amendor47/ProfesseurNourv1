@@ -1062,3 +1062,10 @@ body #output-card .tab-pane { max-width: var(--content-max); width: 100%; margin
 
 /* Barre de progression du mode Test */
 #test-progress { width:100%; height:16px; margin-top:8px; }
+/* Fallback simple si .study-cave n’est pas chargé */
+.fiche-card { border:1px solid var(--border-color); border-radius:12px; padding:12px; background:var(--surface-color); }
+.fiche-card h4 { margin:.25rem 0 .25rem; font-size:1.1rem; }
+.fiche-card h5 { margin:.5rem 0 .25rem; font-size:1rem; color:var(--accent-cyan, #22d3ee); }
+.fiche-card ul { margin:.25rem 0 .5rem 1.1rem; }
+.flashcard { border:1px solid var(--border-color); border-radius:10px; padding:10px; margin:8px 0; }
+.flashcard .hidden{ display:none; }
