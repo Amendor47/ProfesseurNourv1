@@ -3,7 +3,6 @@
 document.addEventListener("DOMContentLoaded", () => {
   initTabs();
   initFileUpload();
-  initAnalysis();
   initTestMode();
   initThemeToggler();
 });
@@ -493,14 +492,3 @@ function renderQCM() {
     });
   });
 }
-// Branche sur analyse
-const textArea = document.getElementById('textInput');
-const processBtn = document.getElementById('processBtn');
-processBtn?.addEventListener('click', () => {
-  const text = textArea?.value || '';
-  buildModelFromRaw(text);
-  renderAlignedFiches();
-  renderQCM();
-  renderSmartFlashcards(text);
-  if (CM.sections.length) showAdaptiveSection(0);
-});
