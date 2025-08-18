@@ -1,157 +1,111 @@
-// Cohesive course model and generators
-// Source de vérité unique
-const CM = {
-  meta: { title: "", lang: "fr" },
-  text: "",
-  sections: [],
-  conceptIndex: {},
-  qa: { qcm: [], flashcards: [] }
+/* =========================
+   Coach — pipeline unifié
+   Offline IA ++  •  Merge IA interne  •  Rendus stables
+   ========================= */
+
+// ---------- Source de vérité ----------
+const CM = { meta:{title:"",lang:"fr"}, text:"", sections:[], conceptIndex:{}, qa:{ qcm:[], flashcards:[] } };
+
+// ---------- Utils ----------
+const normalize = s => (s||"").toLowerCase().normalize("NFKD").replace(/[^\p{L}\p{N}\s-]/gu," ");
+const tokens = s => normalize(s).split(/\s+/).filter(w=>w.length>2);
+const uniq = a => [...new Set(a)];
+const clamp = (arr,min,max) => (arr.length<min? [...arr, ...arr.slice(0,Math.max(0,min-arr.length))] : arr).slice(0,Math.min(arr.length,max));
+const Jaccard = (A,B)=>{ const a=new Set(A), b=new Set(B); let i=0; a.forEach(x=>b.has(x)&&i++); return i/Math.max(1,a.size+b.size-i); };
+
+// Split FR robuste (protège ex., p.ex., nombres décimaux)
+const sentSplit = t => {
+  const safe = (t||"")
+    .replace(/\b(p\.ex\.|ex\.|i\.e\.|e\.g\.)/gi,m=>m.replaceAll('.','∎'))
+    .replace(/(\d)\.(\d)/g,'$1∎$2');
+  return safe
+    .split(/(?<=[.!?])\s+(?=[A-ZÀÂÄÇÉÈÊËÎÏÔÖÙÛÜŸ0-9])/)
+    .map(s=>s.replaceAll('∎','.').trim()).filter(Boolean);
 };
 
-// ---- Utilitaires de base ----
-const sentSplit = t => (t || "").split(/(?<=[.!?])\s+/).map(s => s.trim()).filter(Boolean);
-const normalize = s => s.toLowerCase().normalize("NFKD").replace(/[^\p{L}\p{N}\s-]/gu, " ");
-const uniq = arr => [...new Set(arr)];
+// ---------- IA OFFLINE (compréhension de fond) ----------
+function computeGlobalStats(text){
+  const secs = text.split(/\n{2,}/).map(s=>s.trim()).filter(Boolean);
+  const secToks = secs.map(s => tokens(s));
+  const df = new Map();
+  secToks.forEach(set => uniq(set).forEach(w=>df.set(w,(df.get(w)||0)+1)));
+  const N = Math.max(1, secs.length);
+  const idf = w => Math.log(1 + N / (1 + (df.get(w)||0)));
+  return { idf, secs };
+}
 
-// Simple scoring (longueur modérée, position, tf-idf local)
-function scoreSentences(sentences){
-  const tf = new Map();
-  const toks = w => normalize(w).split(/\s+/).filter(x => x.length>2);
-  const all = sentences.map(s => toks(s));
-  all.flat().forEach(w => tf.set(w, (tf.get(w) || 0) + 1));
-  const N = sentences.length || 1;
+function scoreSentencesGlobal(sentences, idf){
+  const all = sentences.map(s=>tokens(s));
+  const tf = new Map(); all.flat().forEach(w=>tf.set(w,(tf.get(w)||0)+1));
   return sentences.map((s,i)=>{
-    const words = toks(s);
-    const lenPenalty = Math.abs(words.length - 18);
-    const posBonus = (i===0?2:(i<3?1:0));
-    const tfidf = uniq(words).reduce((acc,w)=>{
-      const f = tf.get(w)||1;
-      const idf = Math.log(1 + N/(1+f));
-      return acc + (f*idf);
-    },0) / Math.max(1, words.length);
-    return { s, score: tfidf + posBonus - (lenPenalty*0.02) };
+    const ws=tokens(s);
+    const lenPenalty = Math.abs(ws.length-18);
+    const posBonus   = (i===0?2:(i<3?1:0));
+    const tfidf      = uniq(ws).reduce((a,w)=>a + ((tf.get(w)||1)*idf(w)),0)/Math.max(1,ws.length);
+    const deepBonus  = /\b(parce que|entra[iî]ne|implique|résulte|conduit à|donc|ainsi)\b/i.test(s) ? 0.8 : 0;
+    return { s, score: tfidf + posBonus + deepBonus - (lenPenalty*0.02) };
   }).sort((a,b)=>b.score-a.score);
 }
 
-// Résumés tri-niveaux + enrichissements
-function buildSummaries(raw){
+function buildSummariesRich(raw, idf){
   const S = sentSplit(raw);
-  const ranked = scoreSentences(S);
+  const ranked = scoreSentencesGlobal(S, idf);
   const pick = k => ranked.slice(0,k).map(r=>r.s);
-  const short = pick(6).join(' ');
-  const medium = pick(12).join(' ');
-  const base = pick(24);
+
+  const short  = clamp(pick(6), 5, 7).join(' ');
+  const medium = clamp(pick(12),10,14).join(' ');
+
+  let base = clamp(pick(28), 22, 34);
+  const example = S.find(x=>/exemple|par exemple|illustr|cas\s+(concret|pratique)?/i.test(x));
+  const limit   = S.find(x=>/(limite|biais|risque|attention|contre-exemple)/i.test(x));
+  const persp   = S.find(x=>/(en pratique|dans le contexte|implique|conduit à|application)/i.test(x));
+
   const long = [
     ...base.slice(0,6),
-    "Exemple clé : " + (S.find(x=>/exemple|par exemple|illustr|cas/i.test(x)) || base[6] || ""),
-    "Contre-exemple / limite : " + (S.find(x=>/limite|biais|risque|attention/i.test(x)) || base[7] || ""),
-    ...base.slice(8,16),
-    "Mise en perspective : " + (S.find(x=>/en pratique|dans le contexte|conduit à|implique/i.test(x)) || base[16] || ""),
-    ...base.slice(16,24)
+    example ? "Exemple clé : "+example : (base[6]||""),
+    limit   ? "Limite : "+limit       : (base[7]||""),
+    ...base.slice(8,18),
+    persp   ? "Mise en perspective : "+persp : (base[18]||""),
+    ...base.slice(19)
   ].filter(Boolean).join(' ');
-  return { short, medium, long };
+
+  // HTML pédagogique structuré (joli par défaut)
+  const bullets = base.slice(0,8).map(x=>`<li>${x}</li>`).join('');
+  const html = `
+    <div class="fiche-card study-cave">
+      <h4>Idée centrale</h4>
+      <p>${ranked[0]?.s || ''}</p>
+      <h5>Points clés</h5>
+      <ul>${bullets}</ul>
+      ${example?`<h5>Exemple</h5><p>${example}</p>`:''}
+      ${limit?  `<h5>Limites</h5><p>${limit}</p>`:''}
+      ${persp?  `<h5>Mise en perspective</h5><p>${persp}</p>`:''}
+    </div>`;
+  return { short, medium, long, html };
 }
 
-// Générateur de section + mots-clés
-function buildSection(id, title, raw){
+function buildSection(id, title, raw, idf){
   const sentences = sentSplit(raw);
-  const freq = new Map();
-  normalize(raw).split(/\s+/).forEach(w => {
-    if(w.length>3) freq.set(w, (freq.get(w)||0)+1);
-  });
-  const keywords = [...freq.entries()].sort((a,b)=>b[1]-a[1]).slice(0,12).map(([w])=>w);
-  return { id, title, raw, sentences, keywords, summary: buildSummaries(raw) };
+  // mots-clés avec idf global
+  const tf = new Map(); tokens(raw).forEach(w=>tf.set(w,(tf.get(w)||0)+1));
+  const keywords = [...tf.entries()]
+    .map(([w,f])=>[w, f * idf(w)])
+    .sort((a,b)=>b[1]-a[1]).slice(0,12).map(([w])=>w);
+  const summary = buildSummariesRich(raw, idf);
+  // “claims” = phrases de fond (servira aux QCM & cartes)
+  const claims = scoreSentencesGlobal(sentences, idf).slice(0,8).map(r=>r.s);
+  return { id, title, raw, sentences, keywords, summary, claims };
 }
 
-// Pipeline depuis un texte complet
 function buildModelFromText(text){
   CM.text = text;
-  const chunks = text.split(/\n{2,}/).map(s=>s.trim()).filter(Boolean);
-  CM.sections = chunks.map((c,i)=>{
-    const t = c.split('\n')[0].slice(0,80);
-    return buildSection('S'+(i+1), t || `Section ${i+1}`, c);
+  const { idf, secs } = computeGlobalStats(text);
+  CM.sections = secs.map((c,i)=>{
+    const t = c.split('\n')[0].replace(/^[-–•]\s*/,'').slice(0,96);
+    return buildSection('S'+(i+1), t || `Section ${i+1}`, c, idf);
   });
 }
 
-// ---- Génération QCM ----
-function nearMisses(term){
-  return [
-    `Interprétation partielle de ${term}`,
-    `Généralisation abusive liée à ${term}`,
-    `Contre-exemple mal appliqué`,
-    `Hypothèse non vérifiée`
-  ];
-}
-
-function makeMCQ_FromSection(sec){
-  const out=[];
-  const sents=sec.sentences;
-  const defSent=sents.find(x=>/ (est|sont|désigne|correspond|se définit)/i.test(x)) || sents[0];
-  if(defSent){
-    const stem=`Laquelle exprime le plus correctement la définition ou l'idée centrale de « ${sec.title} » ?`;
-    const correct=defSent.replace(/^[-–•]\s*/,'');
-    const ds=nearMisses(sec.title).map(d=>`${d} (mal cadré)`);
-    out.push({type:'definition',stem,options:shuffle([correct,...ds]).slice(0,4),answer:correct});
-  }
-  const cause=sents.find(x=>/parce que|car|entraîne|conduit à|provoque|résulte/i.test(x));
-  if(cause){
-    const stem=`Quelle relation de causalité est la plus défendable à propos de « ${sec.title} » ?`;
-    const correct=cause;
-    const ds=[
-      correct.replace(/(entraîne|conduit à|provoque)/i,'correspond à'),
-      'Corrélation sans lien causal',
-      'Effet et cause inversés'
-    ];
-    out.push({type:'causalite',stem,options:shuffle([correct,...ds]),answer:correct});
-  }
-  const cmp=sents.find(x=>/ (contraire|diffère|vs|plut[oô]t que|comparé)/i.test(x));
-  if(cmp){
-    const stem=`Quelle différence essentielle ressort ?`;
-    const correct=cmp;
-    const ds=['Différence superficielle','Similitude prise pour différence','Cas particulier présenté comme général'];
-    out.push({type:'comparaison',stem,options:shuffle([correct,...ds]),answer:correct});
-  }
-  const base=sents.slice(0,3).join(' ');
-  if(base.length>50){
-    const stem=`Cas : ${base} → Quelle conclusion s'applique le mieux ?`;
-    const correct=sents[3] || sents[sents.length-1];
-    const ds=['Conclusion trop générale','Conclusion contredite par les prémisses','Conclusion hors contexte'];
-    out.push({type:'application',stem,options:shuffle([correct,...ds]),answer:correct});
-  }
-  return out;
-}
-
-function shuffle(a){
-  return a.map(x=>[Math.random(),x]).sort((a,b)=>a[0]-b[0]).map(x=>x[1]);
-}
-
-function buildQCM(){
-  CM.qa.qcm = CM.sections.flatMap(sec => makeMCQ_FromSection(sec));
-}
-
-// ---- Flashcards ----
-function firstMatching(sentences,rx){ return sentences.find(s=>rx.test(s)) || ""; }
-
-function buildFlashcards(){
-  CM.qa.flashcards=[];
-  for(const sec of CM.sections){
-    const s=sec.sentences;
-    const def=firstMatching(s,/\b(est|se définit|désigne|correspond|consiste)\b/i) || s[0];
-    if(def) CM.qa.flashcards.push({type:'def',q:`Qu'est-ce que « ${sec.title} » ?`,a:def});
-    const pourquoi=firstMatching(s,/\b(parce que|car|afin|pour que|entraine|conduit à|provoque)\b/i);
-    if(pourquoi) CM.qa.flashcards.push({type:'why',q:`Pourquoi ${sec.title} ?`,a:pourquoi});
-    const effet=firstMatching(s,/\b(entra[îi]ne|conduit à|provoque|résulte|implique)\b/i);
-    if(effet) CM.qa.flashcards.push({type:'effect',q:`Quelles conséquences de ${sec.title} ?`,a:effet});
-    const cmp=firstMatching(s,/\b(diffère|vs|plut[oô]t que|compar[ée] à|contraire)\b/i);
-    if(cmp) CM.qa.flashcards.push({type:'compare',q:`Différence clé liée à « ${sec.title} » ?`,a:cmp});
-    const ex=firstMatching(s,/\b(exemple|par exemple|cas|illustr)/i);
-    if(ex) CM.qa.flashcards.push({type:'example',q:`Un exemple parlant de ${sec.title} ?`,a:ex});
-    const cex=firstMatching(s,/\b(contre-exemple|limite|biais|attention)\b/i);
-    if(cex) CM.qa.flashcards.push({type:'counter',q:`Une limite/contre-exemple de ${sec.title} ?`,a:cex});
-  }
-}
-
-// ---- Index de concepts + chat ----
 function indexConcepts(){
   CM.conceptIndex={};
   CM.sections.forEach(sec=>{
@@ -164,48 +118,160 @@ function indexConcepts(){
   });
 }
 
-function answerQuery(q){
-  const nq=normalize(q);
-  if(/résume|summary/.test(nq)){
-    const joined=CM.sections.map(s=>s.summary.short).join(' ');
-    return joined || "Commence par coller ton cours puis clique Analyser.";
+// ---------- QCM de fond (questions & propositions issues du cours) ----------
+function uniqueOptions(arr){
+  const seen=new Set(), out=[];
+  for(const x of arr){ const k=normalize(x); if(k && !seen.has(k)){ seen.add(k); out.push(x); } }
+  return out;
+}
+function fillToFour(opts, sec){
+  const pool = sec.claims.concat(sec.sentences).filter(Boolean);
+  while(opts.length<4){
+    const cand = pool[(Math.random()*pool.length)|0] || `Affirmation liée à ${sec.title}`;
+    if(!opts.includes(cand)) opts.push(cand);
   }
-  if(/mots\s*cl[eé]s|keywords?/.test(nq)){
-    const kw=uniq(CM.sections.flatMap(s=>s.keywords)).slice(0,20);
-    return `Mots-clés: ${kw.join(', ')}`;
+  return opts.slice(0,4);
+}
+function contextualDistractors(sec, correct){
+  const base = sec.sentences.filter(s=>s!==correct);
+  const cw = uniq(tokens(correct));
+  const topNearby = base
+    .map(s=>({ s, sim:Jaccard(cw, uniq(tokens(s))) }))
+    .sort((a,b)=>b.sim-a.sim)
+    .slice(0,8)
+    .map(x=>x.s);
+  const transforms = [
+    s => s.replace(/\b(entra[iî]ne|conduit à|provoque)\b/i,'correspond à'),
+    s => s.replace(/\b(parce que|car)\b/i,'alors que'),
+    s => `Généralisation hâtive : ${s}`
+  ];
+  const out = [];
+  for(const cand of topNearby){
+    const t = transforms[out.length % transforms.length];
+    out.push(t(cand));
+    if(out.length>=3) break;
   }
-  const m=q.match(/qu['’]est-ce que\s+(.+?)\s*\?/i);
-  if(m){
-    const term=normalize(m[1]).split(/\s+/).slice(0,3).join(' ');
-    const c=CM.conceptIndex[term];
-    if(c?.defs?.length) return c.defs[0].def;
-    const sec=CM.sections.find(s=>normalize(s.title).includes(term));
-    return sec?.summary.medium || "Je n'ai pas trouvé une définition sûre.";
-  }
-  return "Tu peux me demander « résume », « mots-clés », « qu’est-ce que … ? », « quiz ».";
+  return out.length ? out : ["Corrélation sans causalité","Cause/effet inversés","Hors contexte apparent"];
 }
 
-// ---- Pipeline principal ----
-function runPipeline(text){
-  buildModelFromText(text);
-  indexConcepts();
-  buildQCM();
-  buildFlashcards();
+function makeMCQ_FromSection(sec){
+  const out=[]; const sents=sec.sentences;
+  // Définition / idée centrale
+  const defSent = sec.claims[0] || sents[0];
+  if(defSent){
+    const stem = `Quelle formulation rend le mieux l’idée centrale de « ${sec.title} » ?`;
+    const correct = defSent.replace(/^[-–•]\s*/,'');
+    let options = uniqueOptions([correct, ...contextualDistractors(sec, correct)]);
+    options = fillToFour(options, sec);
+    const explain = o => (o===correct) ? "C’est la formulation la plus fidèle au texte."
+                                       : "C’est une approximation/contre-sens par rapport au passage.";
+    out.push({type:'definition', stem, options, answer:correct, explain});
+  }
+  // Causalité
+  const cause = sents.find(x=>/\b(parce que|car|entra[iî]ne|conduit à|provoque|résulte)\b/i.test(x));
+  if(cause){
+    const stem = `Quelle relation de causalité à propos de « ${sec.title} » est la plus solide ?`;
+    const correct = cause;
+    let options = uniqueOptions([correct, ...contextualDistractors(sec, correct)]);
+    options = fillToFour(options, sec);
+    const explain = o => (o===correct) ? "Le lien de cause à effet est explicite dans le texte."
+                                       : "Ici, on confond corrélation et causalité ou on inverse la relation.";
+    out.push({type:'causalite', stem, options, answer:correct, explain});
+  }
+  // Comparaison (si détectée)
+  const cmp = sents.find(x=>/\b(diff[eé]re|vs|plut[oô]t que|compar[ée] à|contraire)\b/i.test(x));
+  if(cmp){
+    const stem = `Quelle différence essentielle ressort dans « ${sec.title} » ?`;
+    const correct = cmp;
+    let options = uniqueOptions([correct, ...contextualDistractors(sec, correct)]);
+    options = fillToFour(options, sec);
+    const explain = o => (o===correct) ? "La différence est explicitée dans le passage."
+                                       : "Les autres propositions sont superficielles ou hors-sujet.";
+    out.push({type:'comparaison', stem, options, answer:correct, explain});
+  }
+  // Application (mini-cas)
+  if(sents.length>=4){
+    const base = sents.slice(0,3).join(' ');
+    const stem = `Cas: ${base} → Quelle conclusion est la plus cohérente ?`;
+    const correct = sents[3];
+    let options = uniqueOptions([correct, ...contextualDistractors(sec, correct)]);
+    options = fillToFour(options, sec);
+    const explain = o => (o===correct) ? "C’est la conclusion alignée avec les prémisses."
+                                       : "Conclusion trop générale/contradictoire ou hors contexte.";
+    out.push({type:'application', stem, options, answer:correct, explain});
+  }
+  return out;
+}
+function buildQCM(){ CM.qa.qcm = CM.sections.flatMap(sec => makeMCQ_FromSection(sec)); }
+
+// ---------- Flashcards (déf / pourquoi / effet / comparaison / exemple) ----------
+function firstMatching(s,rx){ return s.find(x=>rx.test(x)) || ""; }
+function dedupeCards(cards){
+  const seen=new Set(), out=[];
+  for(const c of cards){
+    const k=(c.q+"|"+c.a).toLowerCase().trim();
+    if(!seen.has(k) && c.q && c.a){ seen.add(k); out.push(c); }
+  }
+  return out;
+}
+function buildFlashcards(){
+  const cards=[];
+  for(const sec of CM.sections){
+    const s=sec.sentences;
+    const def = firstMatching(s,/\b(est|se définit|désigne|correspond|consiste)\b/i) || sec.claims[0] || s[0];
+    if(def) cards.push({type:'def',q:`Qu'est-ce que « ${sec.title} » ?`,a:def});
+    const why = firstMatching(s,/\b(parce que|car|afin|pour que)\b/i);
+    if(why) cards.push({type:'why',q:`Pourquoi ${sec.title} ?`,a:why});
+    const effect = firstMatching(s,/\b(entra[îi]ne|conduit à|provoque|résulte|implique)\b/i);
+    if(effect) cards.push({type:'effect',q:`Quelles conséquences de ${sec.title} ?`,a:effect});
+    const cmp = firstMatching(s,/\b(diff[eé]re|vs|plut[oô]t que|compar[ée] à|contraire)\b/i);
+    if(cmp) cards.push({type:'compare',q:`Différence clé liée à « ${sec.title} » ?`,a:cmp});
+    const ex = firstMatching(s,/\b(exemple|par exemple|cas|illustr)/i);
+    if(ex) cards.push({type:'example',q:`Un exemple parlant de ${sec.title} ?`,a:ex});
+  }
+  CM.qa.flashcards = dedupeCards(cards).slice(0, 100);
 }
 
-// ---- Rendus basiques ----
+// ---------- Fusion avec IA interne (facultatif) ----------
+function mergeInternalOut(out){
+  // out peut contenir: summary, keywords, plan, qcm[], flashcards[]
+  // On s'en sert pour enrichir, jamais pour casser l’offline
+  if(!out) return;
+  // Injecter keywords/plan au niveau global si présents
+  if(Array.isArray(out.sections)){
+    // format attendu: [{title, raw, summary?, keywords?, claims?, qcm?, flashcards?}, ...]
+    out.sections.forEach((ext, i)=>{
+      const sec = CM.sections[i]; if(!sec) return;
+      if(ext.title)   sec.title   = sec.title || ext.title;
+      if(ext.summary) sec.summary = { ...sec.summary, ...ext.summary };
+      if(ext.keywords) sec.keywords = uniq([...sec.keywords, ...ext.keywords]);
+      if(ext.claims)  sec.claims  = uniq([...(sec.claims||[]), ...ext.claims]);
+      if(ext.qcm)     CM.qa.qcm.push(...ext.qcm);
+      if(ext.flashcards) CM.qa.flashcards.push(...ext.flashcards);
+    });
+  }else{
+    // format simple (global)
+    if(out.qcm) CM.qa.qcm.push(...out.qcm);
+    if(out.flashcards) CM.qa.flashcards.push(...out.flashcards);
+  }
+  // dédoublonnage après merge
+  CM.qa.qcm = CM.qa.qcm.filter((q,i,self)=> i===self.findIndex(z=>q.stem===z.stem));
+  CM.qa.flashcards = dedupeCards(CM.qa.flashcards);
+}
+
+// ---------- Rendus ----------
 function renderFiches(){
-  const host=document.getElementById('sheet-output');
-  if(!host) return;
-  host.innerHTML=CM.sections.map((s,i)=>`
+  const host = document.getElementById('sheet-output'); if(!host) return;
+  host.innerHTML = CM.sections.map((s,i)=>`
     <article class="fiche" data-i="${i}">
-      <h4>${s.title}</h4>
+      <h3>${s.title}</h3>
       <div class="view-toggle">
         <button data-view="short">Courte</button>
         <button data-view="medium">Moyenne</button>
-        <button data-view="long" class="active">Longue</button>
+        <button data-view="long">Longue</button>
+        <button data-view="html" class="active">Structurée</button>
       </div>
-      <p class="fiche-content">${s.summary.long}</p>
+      <div class="fiche-content">${s.summary.html}</div>
     </article>
   `).join('');
   host.querySelectorAll('.fiche').forEach(card=>{
@@ -215,15 +281,15 @@ function renderFiches(){
       btn.addEventListener('click',()=>{
         const v=btn.dataset.view;
         card.querySelectorAll('button').forEach(b=>b.classList.toggle('active',b===btn));
-        content.textContent=CM.sections[idx].summary[v];
+        content.innerHTML = (v==='html') ? CM.sections[idx].summary.html : CM.sections[idx].summary[v];
       });
     });
   });
 }
 
 function renderQCM(){
-  const host=document.getElementById('qcm-output');
-  if(!host) return;
+  const host=document.getElementById('qcm-output'); if(!host) return;
+  if(!CM.qa.qcm.length) host.innerHTML = '';
   host.innerHTML=CM.qa.qcm.map((q,i)=>`
     <div class="qcm-item" data-i="${i}">
       <p><strong>${q.stem}</strong></p>
@@ -244,15 +310,27 @@ function renderQCM(){
         labels.forEach(l=>l.classList.remove('qq-correct','qq-wrong'));
         lab.classList.add(idx===correctIndex?'qq-correct':'qq-wrong');
         fb.classList.remove('hidden');
-        fb.textContent=idx===correctIndex? 'Bravo ! ✔️' : `À revoir : ${q.answer}`;
+        const chosen = q.options[idx];
+        fb.textContent = (idx===correctIndex)
+          ? 'Bravo ! ✔️ ' + (q.explain?.(chosen) || '')
+          : `À revoir : ${q.answer}. ` + (q.explain?.(chosen) || '');
       });
     });
   });
 }
 
+function ensureFlashcardsPane(){
+  let pane = document.getElementById('flashcards-pane');
+  if (!pane){
+    const qcmPane = document.getElementById('qcm') || document.body;
+    pane = document.createElement('div');
+    pane.id = 'flashcards-pane';
+    qcmPane.appendChild(pane);
+  }
+  return pane;
+}
 function renderFlashcards(){
-  const host=document.getElementById('flashcards-pane');
-  if(!host) return;
+  const host = ensureFlashcardsPane();
   host.innerHTML=CM.qa.flashcards.map((fc,i)=>`
     <div class="flashcard" data-i="${i}">
       <div class="flashcard-front">${fc.q}</div>
@@ -270,33 +348,47 @@ function renderFlashcards(){
   });
 }
 
-function setupChat(){
-  const send=document.getElementById('chat-send');
-  const input=document.getElementById('chat-input');
-  const messages=document.getElementById('chat-messages');
-  if(!send || send.dataset.bound) return;
-  send.dataset.bound='1';
-  send.addEventListener('click',()=>{
-    const q=input.value.trim();
-    if(!q) return;
-    const a=answerQuery(q);
-    messages.innerHTML+=`<div class="user-msg">${q}</div><div class="bot-msg">${a}</div>`;
-    input.value='';
-  });
+// ---------- Runner unifié (Offline + Interne avec fallback) ----------
+const CONFIG = { INTERNAL_TIMEOUT: 1800, MAX_CHARS: 12000 };
+
+async function tryInternal(text){
+  // Tente /analyze/fast ; retourne null si indispo ou trop lent
+  const ctrl = new AbortController();
+  const timer = setTimeout(()=>ctrl.abort(), CONFIG.INTERNAL_TIMEOUT);
+  try{
+    const res = await fetch('/analyze/fast', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ text: text.slice(0, CONFIG.MAX_CHARS) }),
+      signal: ctrl.signal
+    });
+    clearTimeout(timer);
+    if(!res.ok) throw new Error('HTTP '+res.status);
+    return await res.json();
+  }catch(e){ try{ clearTimeout(timer); }catch{}; return null; }
 }
 
-// ---- Initialisation ----
-document.addEventListener('DOMContentLoaded',()=>{
-  const textArea=document.getElementById('textInput');
-  const processBtn=document.getElementById('processBtn');
-  processBtn?.addEventListener('click',()=>{
-    const text=textArea?.value.trim();
-    if(!text) return;
-    runPipeline(text);
-    renderFiches();
-    renderQCM();
-    renderFlashcards();
-    setupChat();
-  });
+async function runUnifiedPipeline(text, mode='offline', setStatus=(s)=>{}){
+  // 1) Toujours construire une base OFFLINE (rapide et robuste)
+  buildModelFromText(text);
+  indexConcepts();
+  buildQCM();
+  buildFlashcards();
+
+  // 2) Si IA interne demandée, tenter et fusionner
+  if(mode!=='offline'){
+    const out = await tryInternal(text);
+    if(out){ mergeInternalOut(out); }
+  }
+
+  // 3) Rendus synchronisés
+  renderFiches();
+  renderQCM();
+  renderFlashcards();
+  // (Tu peux aussi rebrancher ici ton “showSection(0)” si tu as un parcours)
+}
+
+document.addEventListener('DOMContentLoaded', ()=>{
+  // restauration éventuelle plus tard si tu ajoutes LocalStorage
+  // ici, on laisse simple : on attend le clic “Analyser”
 });
 
