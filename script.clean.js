@@ -14,6 +14,8 @@ const sentSplit = t => {
 
 const STOP = new Set(`les des une un du le la de et que qui pour pas est sont avec sans par sur dans plus moins donc or car comme ainsi cela ceci tres tout toute tous toutes chez fait faire avoir etre afin quand si alors tandis meme entre au aux ces cet cette ce d’ des l’ m’ n’ s’ t’ qu’`.split(/\s+/));
 
+const nextFrame = () => new Promise(requestAnimationFrame);
+
 function rakeKeyphrases(text){
   const sents = sentSplit(text); const phrases=[];
   sents.forEach(s=>{
@@ -93,18 +95,22 @@ function buildSection(id, title, raw, idf){
   return { id, title, raw, sentences, keywords, summary, claims };
 }
 
-function buildModelFromText(text){
+async function buildModelFromText(text){
   CM.text = text;
   const { idf, secs } = computeGlobalStats(text);
-  CM.sections = secs.map((c,i)=>{
+  CM.sections = [];
+  for(let i=0;i<secs.length;i++){
+    const c = secs[i];
     const t = c.split('\n')[0].replace(/^[-–•]\s*/,'').slice(0,96);
-    return buildSection('S'+(i+1), t || `Section ${i+1}`, c, idf);
-  });
+    CM.sections.push(buildSection('S'+(i+1), t || `Section ${i+1}`, c, idf));
+    if(i % 5 === 4) await nextFrame();
+  }
 }
 
-function indexConcepts(){
+async function indexConcepts(){
   CM.conceptIndex={};
-  CM.sections.forEach(sec=>{
+  for(let si=0; si<CM.sections.length; si++){
+    const sec = CM.sections[si];
     const local = uniq(sec.keywords);
     local.forEach(a=>{
       (CM.conceptIndex[a] ||= {defs:[], mentions:[], edges:new Map()});
@@ -120,7 +126,8 @@ function indexConcepts(){
         e.set(y, (e.get(y)||0)+1);
       }));
     });
-  });
+    if(si % 5 === 4) await nextFrame();
+  }
 }
 
 function uniqueOptions(arr){
@@ -189,7 +196,13 @@ function makeMCQ_FromSection(sec){
   }
   return out;
 }
-function buildQCM(){ CM.qa.qcm = CM.sections.flatMap(sec => makeMCQ_FromSection(sec)); }
+async function buildQCM(){
+  CM.qa.qcm=[];
+  for(let i=0;i<CM.sections.length;i++){
+    CM.qa.qcm.push(...makeMCQ_FromSection(CM.sections[i]));
+    if(i % 5 === 4) await nextFrame();
+  }
+}
 
 function firstMatching(s,rx){ return s.find(x=>rx.test(x)) || ""; }
 function clozeFromSentence(s, keyphrases){
@@ -203,9 +216,10 @@ function dedupeCards(cards){
   for(const c of cards){ const k=(c.type+'|'+c.q+'|'+c.a).toLowerCase(); if(!seen.has(k)){ seen.add(k); out.push(c);} }
   return out;
 }
-function buildFlashcards(){
+async function buildFlashcards(){
   const cards=[];
-  for(const sec of CM.sections){
+  for(let i=0;i<CM.sections.length;i++){
+    const sec = CM.sections[i];
     const s=sec.sentences;
     const def = firstMatching(s,/\b(est|se définit|désigne|correspond|consiste)\b/i) || sec.claims[0] || s[0];
     if(def) cards.push({type:'def',q:`Qu'est-ce que « ${sec.title} » ?`,a:def});
@@ -219,6 +233,7 @@ function buildFlashcards(){
     if(ex) cards.push({type:'example',q:`Un exemple parlant de ${sec.title} ?`,a:ex});
     const clz = clozeFromSentence(sec.claims[0]||s[0]||'', sec.keywords.slice(0,6));
     if(clz) cards.push({type:'cloze', q:clz.q, a:clz.a});
+    if(i % 5 === 4) await nextFrame();
   }
   CM.qa.flashcards = dedupeCards(cards).slice(0, 120);
 }
@@ -245,85 +260,114 @@ function mergeInternalOut(out){
 
 function renderFiches(){
   const host = document.getElementById('sheet-output'); if(!host) return;
-  host.innerHTML = CM.sections.map((s,i)=>`
-    <article class="fiche" data-i="${i}">
-      <h3>${s.title}</h3>
-      <div class="view-toggle">
-        <button data-view="short">Courte</button>
-        <button data-view="medium">Moyenne</button>
-        <button data-view="long">Longue</button>
-        <button data-view="html" class="active">Structurée</button>
-      </div>
-      <div class="fiche-content">${s.summary.html}</div>
-    </article>
-  `).join('');
-  host.querySelectorAll('.fiche').forEach(card=>{
-    const idx=+card.dataset.i;
-    const content=card.querySelector('.fiche-content');
-    card.querySelectorAll('button').forEach(btn=>{
-      btn.addEventListener('click',()=>{
-        const v=btn.dataset.view;
-        card.querySelectorAll('button').forEach(b=>b.classList.toggle('active',b===btn));
-        content.innerHTML = (v==='html') ? CM.sections[idx].summary.html : CM.sections[idx].summary[v];
+  host.innerHTML='';
+  let i=0; const batch=4;
+  function step(){
+    const frag=document.createDocumentFragment();
+    for(let end=Math.min(i+batch, CM.sections.length); i<end; i++){
+      const s=CM.sections[i]; const idx=i;
+      const temp=document.createElement('div');
+      temp.innerHTML=`
+        <article class="fiche" data-i="${idx}">
+          <h3>${s.title}</h3>
+          <div class="view-toggle">
+            <button data-view="short">Courte</button>
+            <button data-view="medium">Moyenne</button>
+            <button data-view="long">Longue</button>
+            <button data-view="html" class="active">Structurée</button>
+          </div>
+          <div class="fiche-content">${s.summary.html}</div>
+        </article>`;
+      const card=temp.firstElementChild;
+      const content=card.querySelector('.fiche-content');
+      card.querySelectorAll('button').forEach(btn=>{
+        btn.addEventListener('click',()=>{
+          const v=btn.dataset.view;
+          card.querySelectorAll('button').forEach(b=>b.classList.toggle('active',b===btn));
+          content.innerHTML = (v==='html') ? CM.sections[idx].summary.html : CM.sections[idx].summary[v];
+        });
       });
-    });
-  });
+      frag.appendChild(card);
+    }
+    host.appendChild(frag);
+    if(i<CM.sections.length) requestAnimationFrame(step);
+  }
+  requestAnimationFrame(step);
 }
 
 function renderQCM(){
   const host=document.getElementById('qcm-output'); if(!host) return;
-  host.innerHTML=CM.qa.qcm.map((q,i)=>`
-    <div class="qcm-item" data-i="${i}">
-      <p><strong>${q.stem}</strong></p>
-      <div class="qcm-options">
-        ${q.options.map((opt,idx)=>`<label><input type="radio" name="q-${i}" value="${idx}"> ${opt}</label>`).join('')}
-      </div>
-      <div class="feedback hidden"></div>
-    </div>
-  `).join('');
-  host.querySelectorAll('.qcm-item').forEach(item=>{
-    const qi=+item.dataset.i; const q=CM.qa.qcm[qi];
-    const labels=item.querySelectorAll('label'); const fb=item.querySelector('.feedback');
-    const correctIndex=q.options.indexOf(q.answer);
-    labels.forEach((lab,idx)=>{
-      lab.addEventListener('click',()=>{
-        labels.forEach(l=>l.classList.remove('qq-correct','qq-wrong'));
-        lab.classList.add(idx===correctIndex?'qq-correct':'qq-wrong');
-        fb.classList.remove('hidden');
-        const chosen = q.options[idx];
-        fb.textContent = (idx===correctIndex)
-          ? 'Bravo ! ✔️ ' + (q.explain?.(chosen) || '')
-          : `À revoir : ${q.answer}. ` + (q.explain?.(chosen) || '');
+  host.innerHTML='';
+  let i=0; const batch=3;
+  function step(){
+    const frag=document.createDocumentFragment();
+    for(let end=Math.min(i+batch, CM.qa.qcm.length); i<end; i++){
+      const q=CM.qa.qcm[i]; const idx=i;
+      const temp=document.createElement('div');
+      temp.innerHTML=`
+        <div class="qcm-item" data-i="${idx}">
+          <p><strong>${q.stem}</strong></p>
+          <div class="qcm-options">
+            ${q.options.map((opt,oidx)=>`<label><input type="radio" name="q-${idx}" value="${oidx}"> ${opt}</label>`).join('')}
+          </div>
+          <div class="feedback hidden"></div>
+        </div>`;
+      const item=temp.firstElementChild;
+      const labels=item.querySelectorAll('label'); const fb=item.querySelector('.feedback');
+      const correctIndex=q.options.indexOf(q.answer);
+      labels.forEach((lab,lidx)=>{
+        lab.addEventListener('click',()=>{
+          labels.forEach(l=>l.classList.remove('qq-correct','qq-wrong'));
+          lab.classList.add(lidx===correctIndex?'qq-correct':'qq-wrong');
+          fb.classList.remove('hidden');
+          const chosen = q.options[lidx];
+          fb.textContent = (lidx===correctIndex)
+            ? 'Bravo ! ✔️ ' + (q.explain?.(chosen) || '')
+            : `À revoir : ${q.answer}. ` + (q.explain?.(chosen) || '');
+        });
       });
-    });
-  });
+      frag.appendChild(item);
+    }
+    host.appendChild(frag);
+    if(i<CM.qa.qcm.length) requestAnimationFrame(step);
+  }
+  requestAnimationFrame(step);
 }
 
 function renderFlashcards(){
   const host = document.getElementById('flashcards-pane');
   if(!host || !CM?.qa?.flashcards?.length) return;
-
-  host.innerHTML = CM.qa.flashcards.map((fc,i)=>`
-    <div class="flashcard" data-i="${i}">
-      <div class="flashcard-inner">
-        <div class="flashcard-front">${fc.q}</div>
-        <div class="flashcard-back hidden">${fc.a}</div>
-      </div>
-      <button class="flip-btn">↺ Retourner</button>
-    </div>
-  `).join('');
-
-  host.querySelectorAll('.flashcard').forEach(card=>{
-    const inner = card.querySelector('.flashcard-inner');
-    const front = card.querySelector('.flashcard-front');
-    const back  = card.querySelector('.flashcard-back');
-    const flipBtn = card.querySelector('.flip-btn');
-    flipBtn.addEventListener('click',()=>{
-      inner.classList.toggle('flipped');
-      front.classList.toggle('hidden');
-      back.classList.toggle('hidden');
-    });
-  });
+  host.innerHTML='';
+  let i=0; const batch=4;
+  function step(){
+    const frag=document.createDocumentFragment();
+    for(let end=Math.min(i+batch, CM.qa.flashcards.length); i<end; i++){
+      const fc=CM.qa.flashcards[i];
+      const temp=document.createElement('div');
+      temp.innerHTML=`
+        <div class="flashcard" data-i="${i}">
+          <div class="flashcard-inner">
+            <div class="flashcard-front">${fc.q}</div>
+            <div class="flashcard-back hidden">${fc.a}</div>
+          </div>
+          <button class="flip-btn">↺ Retourner</button>
+        </div>`;
+      const card=temp.firstElementChild;
+      const inner = card.querySelector('.flashcard-inner');
+      const front = card.querySelector('.flashcard-front');
+      const back  = card.querySelector('.flashcard-back');
+      const flipBtn = card.querySelector('.flip-btn');
+      flipBtn.addEventListener('click',()=>{
+        inner.classList.toggle('flipped');
+        front.classList.toggle('hidden');
+        back.classList.toggle('hidden');
+      });
+      frag.appendChild(card);
+    }
+    host.appendChild(frag);
+    if(i<CM.qa.flashcards.length) requestAnimationFrame(step);
+  }
+  requestAnimationFrame(step);
 }
 
 const CONFIG = { INTERNAL_TIMEOUT: 1800, MAX_CHARS: 12000 };
@@ -338,10 +382,10 @@ async function tryInternal(text){
   }catch(e){ try{ clearTimeout(timer); }catch{}; return null; }
 }
 async function runUnifiedPipeline(text, mode='offline'){
-  buildModelFromText(text);
-  indexConcepts();
-  buildQCM();
-  buildFlashcards();
+  await buildModelFromText(text);
+  await indexConcepts();
+  await buildQCM();
+  await buildFlashcards();
   if(mode!=='offline'){
     const out = await tryInternal(text);
     if(out) mergeInternalOut(out);
