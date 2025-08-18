@@ -1135,3 +1135,23 @@ textarea::placeholder, input::placeholder{ color:var(--muted) !important; }
 .fiche h4, .fiche h5, .flashcard-front, .flashcard-back {
   color: var(--text) !important;
 }
+
+/* Flashcards flip */
+.flashcard-inner {
+  position: relative;
+  width: 100%;
+  min-height: 120px;
+  transform-style: preserve-3d;
+  transition: transform 0.6s;
+}
+.flashcard.flipped .flashcard-inner {
+  transform: rotateY(180deg);
+}
+.flashcard-front, .flashcard-back {
+  position: absolute;
+  width: 100%;
+  backface-visibility: hidden;
+}
+.flashcard-back {
+  transform: rotateY(180deg);
+}

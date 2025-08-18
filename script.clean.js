@@ -299,17 +299,10 @@ function renderQCM(){
   });
 }
 
-function ensureFlashcardsPane(){
-  let pane = document.getElementById('flashcards-pane');
-  if (!pane){
-    const host = document.getElementById('cards') || document.getElementById('qcm') || document.body;
-    pane = document.createElement('div'); pane.id='flashcards-pane'; host.appendChild(pane);
-  }
-  return pane;
-}
 function renderFlashcards(){
   const host = document.getElementById('flashcards-pane');
-  if(!host) return;
+  if(!host || !CM?.qa?.flashcards?.length) return;
+
   host.innerHTML = CM.qa.flashcards.map((fc,i)=>`
     <div class="flashcard" data-i="${i}">
       <div class="flashcard-inner">
@@ -319,10 +312,11 @@ function renderFlashcards(){
       <button class="flip-btn">↺ Retourner</button>
     </div>
   `).join('');
+
   host.querySelectorAll('.flashcard').forEach(card=>{
     const inner = card.querySelector('.flashcard-inner');
     const front = card.querySelector('.flashcard-front');
-    const back = card.querySelector('.flashcard-back');
+    const back  = card.querySelector('.flashcard-back');
     const flipBtn = card.querySelector('.flip-btn');
     flipBtn.addEventListener('click',()=>{
       inner.classList.toggle('flipped');
@@ -343,19 +337,23 @@ async function tryInternal(text){
     clearTimeout(timer); if(!res.ok) throw new Error('HTTP '+res.status); return await res.json();
   }catch(e){ try{ clearTimeout(timer); }catch{}; return null; }
 }
-async function runUnifiedPipeline(text, mode='offline', setStatus=(s)=>{}){
-  buildModelFromText(text); indexConcepts(); buildQCM(); buildFlashcards();
-  if(mode!=='offline'){ const out = await tryInternal(text); if(out){ mergeInternalOut(out); } }
-  renderFiches(); renderQCM(); renderFlashcards();
+async function runUnifiedPipeline(text, mode='offline'){
+  buildModelFromText(text);
+  indexConcepts();
+  buildQCM();
+  buildFlashcards();
+  if(mode!=='offline'){
+    const out = await tryInternal(text);
+    if(out) mergeInternalOut(out);
+  }
 }
 
-/* === Bootstrap UI : bouton Analyser, déverrouillage onglets, Réglages === */
+/* === Bootstrap UI === */
 (function(){
   const $  = (q,c=document)=>c.querySelector(q);
   const $$ = (q,c=document)=>Array.from(c.querySelectorAll(q));
   const norm = s => (s||'').replace(/\r/g,'').trim();
 
-  // Crée un modal Réglages si absent
   function ensureSettingsModal(){
     if ($('#settingsModal')) return;
     const wrap = document.createElement('div');
@@ -379,77 +377,43 @@ async function runUnifiedPipeline(text, mode='offline', setStatus=(s)=>{}){
         </div>
       </div>`;
     document.body.appendChild(wrap);
-    $('#settingsClose').addEventListener('click', ()=> wrap.classList.remove('open'));
+    $('#settingsClose').addEventListener('click',()=>wrap.classList.remove('open'));
   }
 
-  // Ouvre/ferme le modal
+  function unlockTabs(){
+    $$('.tabs button').forEach(b=>{ b.disabled=false; });
+    const synth = $$('.tabs button').find(b=>/fiche|synth[ée]se/i.test(b.textContent||'')) || $$('.tabs button')[0];
+    synth?.classList.add('active');
+  }
+
   function wireSettings(){
     ensureSettingsModal();
-    // Cherche plus large si bouton absent
     const btn = document.querySelector('#settingsBtn, [data-role="settings"], #gearBtn, .settings-btn');
-    if(!btn) return;
-    if(btn.dataset.bound) return; btn.dataset.bound='1';
-    btn.addEventListener('click', (e)=>{
+    if(!btn || btn.dataset.bound) return;
+    btn.dataset.bound='1';
+    btn.addEventListener('click',e=>{
       e.preventDefault();
       document.getElementById('settingsModal').classList.add('open');
     });
   }
 
-  // Déverrouille les onglets quand des données existent
-  function unlockTabs(){
-    $$('.tabs button').forEach(b=>{ b.disabled = false; });
-    // active par défaut "Fiche de Synthèse" si présent
-    const synth = $$('.tabs button').find(b=>/fiche|synth[ée]se/i.test(b.textContent||'')) || $$('.tabs button')[0];
-    synth?.classList.add('active');
-  }
-
-  // Rendu minimal si le projet utilise des IDs différents
-  function safeRender(){
-    try{
-      renderFiches?.(); renderQCM?.(); renderFlashcards?.();
-    }catch(e){ console.debug('safeRender noop', e); }
-  }
-
-  // Branche le bouton Analyser
   function wireAnalyze(){
-    const textArea = $('#textInput') || $('#input-text') || $('textarea');
+    const textArea   = $('#textInput') || $('#input-text') || $('textarea');
     const processBtn = $('#processBtn') || $('#analyzeBtn') || $('.btn-primary');
-    const providerSel = $('#aiProvider'); // peut exister dans le header
-    const statusEl = $('#providerStatus');
+    if(!processBtn || processBtn.dataset.bound) return;
 
-    function setStatus(msg, ok=false){
-      if(!statusEl) return;
-      statusEl.textContent = msg;
-      statusEl.className = 'badge' + (ok?' success':'');
-    }
-
-    if(!processBtn) return;
-    if(processBtn.dataset.bound) return; processBtn.dataset.bound='1';
-
+    processBtn.dataset.bound='1';
     processBtn.addEventListener('click', async ()=>{
       const text = norm(textArea?.value);
       if(!text){ alert('Colle un texte ou charge un exemple.'); return; }
-      const mode = (providerSel?.value || 'offline');
-      setStatus(mode==='offline' ? 'Analyse locale…' : 'IA interne (tentative)…');
+
       try{
-        // IMPORTANT : appelle ton pipeline unifié si dispo, sinon fallback local
-        if (typeof runUnifiedPipeline === 'function'){
-          await runUnifiedPipeline(text, mode, setStatus);
-        } else if (typeof runPipeline === 'function'){
-          runPipeline(text);
-        } else if (typeof buildModelFromText === 'function'){
-          buildModelFromText(text);
-        }
-        safeRender();
+        await runUnifiedPipeline(text,'offline');
+        renderFiches(); renderQCM(); renderFlashcards();
         unlockTabs();
-        setStatus(mode==='offline' ? 'Local prêt' : 'IA interne (ok)', true);
       }catch(err){
-        console.error(err);
-        // Fallback : offline minimal
-        try{
-          buildModelFromText?.(text); safeRender(); unlockTabs();
-        }catch(e){}
-        setStatus('Analyse locale (fallback)', true);
+        console.error('Erreur analyse:',err);
+        alert("Erreur pendant l'analyse (voir console).");
       }
     });
   }
