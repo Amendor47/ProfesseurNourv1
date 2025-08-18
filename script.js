@@ -3,6 +3,7 @@
 document.addEventListener("DOMContentLoaded", () => {
   initTabs();
   initFileUpload();
+  initAnalysis();
   initTestMode();
   initThemeToggler();
 });

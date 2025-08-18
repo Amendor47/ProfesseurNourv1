@@ -28,73 +28,83 @@ _TINY_CFG = {"max_new_tokens": 256, "temperature": 0.7, "top_p": 0.85, "repetiti
 INTERNAL_DEFAULT = (os.getenv('INTERNAL_MODEL', 'tinyllama') or 'tinyllama').lower()
 tinyllama_model = None  # type: ignore
 _TINY_GEN_KEYS = {"max_new_tokens", "temperature", "top_p", "repetition_penalty"}
-try:
-    from ctransformers import AutoModelForCausalLM as _CTC
-    tiny_file_abs = os.path.join(_TINY_PATH, _TINY_FILE)
-    use_path = _TINY_PATH
-    if not os.path.exists(tiny_file_abs) and os.path.exists(os.path.join(_ALT_TINY_PATH, _TINY_FILE)):
-        use_path = _ALT_TINY_PATH
-        tiny_file_abs = os.path.join(use_path, _TINY_FILE)
-    if os.path.exists(tiny_file_abs):
-        # Pass no config object here to avoid version-specific API issues; apply generation params at call time
-        tinyllama_model = _CTC.from_pretrained(use_path, model_file=_TINY_FILE, model_type='llama')  # type: ignore[arg-type]
-        print(f"✅ TinyLlama chargé avec succès depuis {tiny_file_abs}")
-    else:
-        print(f"❌ TinyLlama non chargé (introuvable): {tiny_file_abs}")
-except Exception as _e:
-    tinyllama_model = None
-    print("❌ Erreur chargement TinyLlama :", _e)
 
 # --- Optional Qwen2 1.5B FR (GGUF) local model (preferred) ---
 qwen_model = None  # type: ignore
 _QWEN_CFG = {"max_new_tokens": 256, "temperature": 0.7, "top_p": 0.9, "repetition_penalty": 1.05, "context_length": 4096}
 qwen_info: Dict[str, Any] = {"path": None, "file": None}
-try:
-    from ctransformers import AutoModelForCausalLM as _CTC2  # reuse if available
-    # Allow explicit configuration via env vars
-    _QWEN_DIR_ENV = os.getenv("QWEN_DIR")
-    _QWEN_FILE_ENV = os.getenv("QWEN_FILE")
-    _CANDIDATE_DIRS = []  # type: List[str]
-    if _QWEN_DIR_ENV:
-        _CANDIDATE_DIRS.append(os.path.expanduser(_QWEN_DIR_ENV))
-    # Common local paths
-    _CANDIDATE_DIRS += [
-        os.path.join(_ROOT, 'models'),
-        os.path.join(_ROOT, 'model'),
-    ]
-    chosen_dir, chosen_file = None, None
-    for base in _CANDIDATE_DIRS:
-        if not os.path.isdir(base):
-            continue
-        for root, _dirs, files in os.walk(base):
-            for f in files:
-                name = f.lower()
-                if name.endswith('.gguf') and 'qwen' in name and ('1.5' in name or '1_5' in name or '1-5' in name or '1b5' in name or '1.5b' in name):
-                    # Prefer FR/instruct variants if multiple candidates
-                    chosen_dir, chosen_file = root, f
-                    if ('fr' in name) or ('instruct' in name):
-                        break
-            if chosen_file:
-                break
-        if chosen_file:
-            break
-    if _QWEN_FILE_ENV and _QWEN_DIR_ENV:
-        chosen_dir, chosen_file = os.path.expanduser(_QWEN_DIR_ENV), _QWEN_FILE_ENV
-    if chosen_dir and chosen_file:
+
+def load_models() -> None:
+    """Lazy-load internal TinyLlama and optional Qwen models."""
+    global tinyllama_model, qwen_model, qwen_info
+    if tinyllama_model is None:
         try:
-            qwen_model = _CTC2.from_pretrained(chosen_dir, model_file=chosen_file, model_type='qwen2')  # type: ignore[arg-type]
-            qwen_info.update({"path": chosen_dir, "file": chosen_file})
-            print(f"✅ Qwen chargé avec succès depuis {os.path.join(chosen_dir, chosen_file)}")
-        except Exception as _qe:
-            print("❌ Erreur chargement Qwen2 :", _qe)
+            from ctransformers import AutoModelForCausalLM as _CTC
+            tiny_file_abs = os.path.join(_TINY_PATH, _TINY_FILE)
+            use_path = _TINY_PATH
+            if not os.path.exists(tiny_file_abs) and os.path.exists(os.path.join(_ALT_TINY_PATH, _TINY_FILE)):
+                use_path = _ALT_TINY_PATH
+                tiny_file_abs = os.path.join(use_path, _TINY_FILE)
+            if os.path.exists(tiny_file_abs):
+                tinyllama_model = _CTC.from_pretrained(use_path, model_file=_TINY_FILE, model_type='llama')  # type: ignore[arg-type]
+                print(f"✅ TinyLlama chargé avec succès depuis {tiny_file_abs}")
+            else:
+                print(f"❌ TinyLlama non chargé (introuvable): {tiny_file_abs}")
+        except Exception as _e:
+            tinyllama_model = None
+            print("❌ Erreur chargement TinyLlama :", _e)
+    if qwen_model is None:
+        try:
+            from ctransformers import AutoModelForCausalLM as _CTC2  # reuse if available
+            _QWEN_DIR_ENV = os.getenv("QWEN_DIR")
+            _QWEN_FILE_ENV = os.getenv("QWEN_FILE")
+            _CANDIDATE_DIRS: List[str] = []
+            if _QWEN_DIR_ENV:
+                _CANDIDATE_DIRS.append(os.path.expanduser(_QWEN_DIR_ENV))
+            _CANDIDATE_DIRS += [
+                os.path.join(_ROOT, 'models'),
+                os.path.join(_ROOT, 'model'),
+            ]
+            chosen_dir, chosen_file = None, None
+            for base in _CANDIDATE_DIRS:
+                if not os.path.isdir(base):
+                    continue
+                for root, _dirs, files in os.walk(base):
+                    for f in files:
+                        name = f.lower()
+                        if name.endswith('.gguf') and 'qwen' in name and ('1.5' in name or '1_5' in name or '1-5' in name or '1b5' in name or '1.5b' in name):
+                            chosen_dir, chosen_file = root, f
+                            if ('fr' in name) or ('instruct' in name):
+                                break
+                    if chosen_file:
+                        break
+                if chosen_file:
+                    break
+            if _QWEN_FILE_ENV and _QWEN_DIR_ENV:
+                chosen_dir, chosen_file = os.path.expanduser(_QWEN_DIR_ENV), _QWEN_FILE_ENV
+            if chosen_dir and chosen_file:
+                try:
+                    qwen_model = _CTC2.from_pretrained(chosen_dir, model_file=chosen_file, model_type='qwen2')  # type: ignore[arg-type]
+                    qwen_info.update({"path": chosen_dir, "file": chosen_file})
+                    print(f"✅ Qwen chargé avec succès depuis {os.path.join(chosen_dir, chosen_file)}")
+                except Exception as _qe:
+                    print("❌ Erreur chargement Qwen2 :", _qe)
+                    qwen_model = None
+            else:
+                pass
+        except Exception as _qerr:
             qwen_model = None
-    else:
-        # Silent if not present; this is optional
-        pass
-except Exception as _qerr:
+            print("ℹ️ Qwen2 non initialisé (optionnel) :", _qerr)
+
+@app.on_event("startup")
+def _startup_event() -> None:
+    load_models()
+
+@app.on_event("shutdown")
+def _shutdown_event() -> None:
+    global tinyllama_model, qwen_model
+    tinyllama_model = None
     qwen_model = None
-    # Do not fail app if qwen isn't available
-    print("ℹ️ Qwen2 non initialisé (optionnel) :", _qerr)
 
 def _llm_health() -> Dict[str, Any]:
     # Inspect config to ensure local model configuration is usable
