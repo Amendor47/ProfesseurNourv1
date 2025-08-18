@@ -1124,3 +1124,14 @@ textarea::placeholder, input::placeholder{ color:var(--muted) !important; }
 #settingsModal.open{ display:flex; }
 #settingsModal .modal-card{ width:min(560px,92vw); background:var(--panel); border:1px solid var(--border); border-radius:14px; padding:16px; box-shadow:0 20px 60px rgba(0,0,0,.5); }
 #settingsModal .modal-card h3{ margin:.25rem 0 1rem; color:var(--accent); }
+
+/* Fix visibilité fiches & cartes */
+.fiche, .fiche-card, .qcm-item, .flashcard {
+  background: var(--panel) !important;
+  color: var(--text) !important;
+  border: 1px solid var(--border) !important;
+}
+
+.fiche h4, .fiche h5, .flashcard-front, .flashcard-back {
+  color: var(--text) !important;
+}
