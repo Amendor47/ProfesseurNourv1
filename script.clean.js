@@ -341,5 +341,112 @@ async function runUnifiedPipeline(text, mode='offline', setStatus=(s)=>{}){
   if(mode!=='offline'){ const out = await tryInternal(text); if(out){ mergeInternalOut(out); } }
   renderFiches(); renderQCM(); renderFlashcards();
 }
+
+/* === Bootstrap UI : bouton Analyser, déverrouillage onglets, Réglages === */
+(function(){
+  const $  = (q,c=document)=>c.querySelector(q);
+  const $$ = (q,c=document)=>Array.from(c.querySelectorAll(q));
+  const norm = s => (s||'').replace(/\r/g,'').trim();
+
+  // Crée un modal Réglages si absent
+  function ensureSettingsModal(){
+    if ($('#settingsModal')) return;
+    const wrap = document.createElement('div');
+    wrap.id = 'settingsModal';
+    wrap.innerHTML = `
+      <div class="modal-card">
+        <h3>Réglages</h3>
+        <div style="display:grid; gap:.75rem;">
+          <label>Mode
+            <select id="aiProvider">
+              <option value="offline">Local (offline)</option>
+              <option value="internal">IA interne</option>
+            </select>
+          </label>
+          <label>Clé API (si nécessaire)
+            <input type="text" id="apiKey" placeholder="sk-..." />
+          </label>
+        </div>
+        <div style="margin-top:1rem; display:flex; gap:.5rem; justify-content:flex-end;">
+          <button id="settingsClose" class="btn">Fermer</button>
+        </div>
+      </div>`;
+    document.body.appendChild(wrap);
+    $('#settingsClose').addEventListener('click', ()=> wrap.classList.remove('open'));
+  }
+
+  // Ouvre/ferme le modal
+  function wireSettings(){
+    ensureSettingsModal();
+    const btn = $('#settingsBtn') || $('[data-role="settings"]') || $('#gearBtn');
+    if(!btn) return;
+    if(btn.dataset.bound) return; btn.dataset.bound='1';
+    btn.addEventListener('click', (e)=>{ e.preventDefault(); $('#settingsModal').classList.add('open'); });
+  }
+
+  // Déverrouille les onglets quand des données existent
+  function unlockTabs(){
+    $$('.tabs button').forEach(b=>{ b.disabled = false; });
+    // active par défaut "Fiche de Synthèse" si présent
+    const synth = $$('.tabs button').find(b=>/fiche|synth[ée]se/i.test(b.textContent||'')) || $$('.tabs button')[0];
+    synth?.classList.add('active');
+  }
+
+  // Rendu minimal si le projet utilise des IDs différents
+  function safeRender(){
+    try{
+      renderFiches?.(); renderQCM?.(); renderFlashcards?.();
+    }catch(e){ console.debug('safeRender noop', e); }
+  }
+
+  // Branche le bouton Analyser
+  function wireAnalyze(){
+    const textArea = $('#textInput') || $('#input-text') || $('textarea');
+    const processBtn = $('#processBtn') || $('#analyzeBtn') || $('.btn-primary');
+    const providerSel = $('#aiProvider'); // peut exister dans le header
+    const statusEl = $('#providerStatus');
+
+    function setStatus(msg, ok=false){
+      if(!statusEl) return;
+      statusEl.textContent = msg;
+      statusEl.className = 'badge' + (ok?' success':'');
+    }
+
+    if(!processBtn) return;
+    if(processBtn.dataset.bound) return; processBtn.dataset.bound='1';
+
+    processBtn.addEventListener('click', async ()=>{
+      const text = norm(textArea?.value);
+      if(!text){ alert('Colle un texte ou charge un exemple.'); return; }
+      const mode = (providerSel?.value || 'offline');
+      setStatus(mode==='offline' ? 'Analyse locale…' : 'IA interne (tentative)…');
+      try{
+        // IMPORTANT : appelle ton pipeline unifié si dispo, sinon fallback local
+        if (typeof runUnifiedPipeline === 'function'){
+          await runUnifiedPipeline(text, mode, setStatus);
+        } else if (typeof runPipeline === 'function'){
+          runPipeline(text);
+        } else if (typeof buildModelFromText === 'function'){
+          buildModelFromText(text);
+        }
+        safeRender();
+        unlockTabs();
+        setStatus(mode==='offline' ? 'Local prêt' : 'IA interne (ok)', true);
+      }catch(err){
+        console.error(err);
+        // Fallback : offline minimal
+        try{
+          buildModelFromText?.(text); safeRender(); unlockTabs();
+        }catch(e){}
+        setStatus('Analyse locale (fallback)', true);
+      }
+    });
+  }
+
+  document.addEventListener('DOMContentLoaded', ()=>{
+    wireSettings();
+    wireAnalyze();
+  });
+})();
 /* === end script.clean.js =========================================== */
 
