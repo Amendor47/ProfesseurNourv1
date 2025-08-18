@@ -260,6 +260,7 @@
                     <button id="tabbtn-fiche" class="tab-link" role="tab" aria-selected="false" tabindex="-1" aria-controls="fiche" data-tab="fiche">Fiche de Synthèse</button>
                     <button id="tabbtn-qcm" class="tab-link" role="tab" aria-selected="false" tabindex="-1" aria-controls="qcm" data-tab="qcm">QCM Adaptatif</button>
                     <button id="tabbtn-cards" class="tab-link" role="tab" aria-selected="false" tabindex="-1" aria-controls="flashcards-pane" data-tab="flashcards-pane">Cartes</button>
+                    <button id="tabbtn-test" class="tab-link" role="tab" aria-selected="false" tabindex="-1" aria-controls="test" data-tab="test">Mode Test</button>
                     <button id="tabbtn-revision" class="tab-link" role="tab" aria-selected="false" tabindex="-1" aria-controls="revision" data-tab="revision">Révision Prioritaire</button>
                     <button id="tabbtn-chat" class="tab-link" role="tab" aria-selected="false" tabindex="-1" aria-controls="chat" data-tab="chat">Chat Interne</button>
                     <button id="tabbtn-socratic" class="tab-link" role="tab" aria-selected="false" tabindex="-1" aria-controls="socratic" data-tab="socratic">Dialogue Socratique</button>
@@ -376,6 +377,21 @@
                                                 <h3>QCM Adaptatifs</h3>
                         <div id="qcm-output"></div>
                     </div>
+                    <div id="test" class="tab-pane" role="tabpanel" aria-labelledby="tabbtn-test" tabindex="0">
+                        <h3>Mode Test</h3>
+                        <div id="test-start-pane">
+                            <p>Un mix automatique de QCM, vrai/faux et réponses libres.</p>
+                            <button id="test-start" class="btn primary">Démarrer le test</button>
+                        </div>
+                        <div id="test-question-pane" class="hidden">
+                            <p id="test-question"></p>
+                            <div id="test-options" class="qcm-options"></div>
+                            <input type="text" id="test-answer" class="input hidden" placeholder="Écris ta réponse..." aria-label="Réponse libre">
+                            <button id="test-submit" class="btn primary hidden">Valider</button>
+                            <div id="test-feedback" class="feedback hidden"></div>
+                            <progress id="test-progress" value="0" max="0"></progress>
+                        </div>
+                    </div>
                     <!-- The Flashcards pane will be injected with id=flashcards-pane by script.js -->
                     <div id="revision" class="tab-pane card tile orange" style="border:none; box-shadow:none;" role="tabpanel" aria-labelledby="tabbtn-revision" tabindex="0">
                         <h3>Révision Prioritaire (SRS)</h3>
@@ -387,7 +403,7 @@
                             <div id="chat-messages" class="chat-messages"></div>
                             <div id="chat-suggestions" class="chat-suggestions" aria-label="Suggestions de questions" style="margin:8px 0; display:flex; flex-wrap:wrap; gap:6px"></div>
                             <div class="chat-input-area">
-                                <input type="text" id="chat-input" placeholder="Posez une question au Professeur Nour...">
+                                <input type="text" id="chat-input" placeholder="Pose ta question...">
                                 <button id="chat-send" class="btn">Envoyer</button>
                             </div>
                         </div>
@@ -454,38 +470,12 @@
             </header>
             <div id="nour-chat-messages" class="chat-messages"></div>
             <div class="chat-input-area">
-                <input type="text" id="nour-chat-input" placeholder="Posez votre question…"/>
+                <input type="text" id="nour-chat-input" placeholder="Pose ta question..."/>
                 <button id="nour-chat-send" class="btn">Envoyer</button>
             </div>
         </div>
 
-        <script>
-            // Theme toggler: supports Nour et StudyCave (mode clair supprimé); default = Nour; syncs selects; manages theme-dark
-            (function(){
-                const html = document.documentElement;
-                const headerSel = document.getElementById('themeSelect');
-                const settingsSel = document.getElementById('theme-select');
-                const map = { nour:'theme-nour', studycave:'theme-studycave' };
-                const rev = { 'theme-nour':'nour', 'theme-studycave':'studycave' };
-                let savedClass = localStorage.getItem('selected-theme') || 'theme-nour';
-                if (savedClass === 'theme-light') savedClass = 'theme-nour';
-                function applyClass(themeClass){
-                    html.classList.remove('theme-nour','theme-light','theme-studycave');
-                    html.classList.add(themeClass);
-                    html.classList.add('theme-dark');
-                    localStorage.setItem('selected-theme', themeClass);
-                    if (headerSel) headerSel.value = rev[themeClass] || 'studycave';
-                    if (settingsSel) settingsSel.value = themeClass;
-                }
-                // initial
-                applyClass(savedClass);
-                function onHeaderChange(){ applyClass(map[headerSel.value] || 'theme-nour'); }
-                function onSettingsChange(){ applyClass(settingsSel.value || 'theme-nour'); }
-                headerSel?.addEventListener('change', onHeaderChange);
-                settingsSel?.addEventListener('change', onSettingsChange);
-            })();
-        </script>
-    <script src="script.clean.js"></script>
+    <script src="script.js"></script>
 <script>
 /* ============================================================
      Guided Study — modèle unifié (Fiches ⇄ Parcours ⇄ QCM ⇄ Cartes)
