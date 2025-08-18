@@ -3,7 +3,6 @@
 document.addEventListener("DOMContentLoaded", () => {
   initTabs();
   initFileUpload();
-  initChat();
   initAnalysis();
   initTestMode();
   initThemeToggler();
@@ -89,27 +88,6 @@ function initAnalysis() {
   });
 }
 
-/* ---------- Chat interne ---------- */
-function initChat() {
-  const sendBtn = document.getElementById("chat-send");
-  const input = document.getElementById("chat-input");
-  const messages = document.getElementById("chat-messages");
-  sendBtn.addEventListener("click", () => {
-    const msg = input.value.trim();
-    if (!msg) return;
-    addMessage("user", msg, messages);
-    input.value = "";
-    setTimeout(() => addMessage("assistant", "Voici une réponse fictive !", messages), 600);
-  });
-}
-
-function addMessage(role, text, container) {
-  const div = document.createElement("div");
-  div.classList.add("chat-message", `${role}-message`);
-  div.textContent = text;
-  container.appendChild(div);
-  container.scrollTop = container.scrollHeight;
-}
 
 function initTestMode() {
   const startBtn = document.getElementById('test-start');
@@ -176,6 +154,150 @@ function initTestMode() {
     showQuestion();
   });
 }
+
+/* ==========================
+   Chat local “Professeur Nour”
+   - marche sans backend
+   - exploite le texte importé / analysé
+   ========================== */
+(function(){
+  if (window.__NOUR_CHAT_WIRED__) return; window.__NOUR_CHAT_WIRED__ = true;
+
+  // --- Helpers DOM
+  const $  = (q, c=document)=>c.querySelector(q);
+  const $$ = (q, c=document)=>Array.from(c.querySelectorAll(q));
+  const elChatMsg   = $('#chat-messages');
+  const elChatIn    = $('#chat-input');
+  const elChatSend  = $('#chat-send');
+
+  const elFab       = $('#nour-fab');
+  const elNourChat  = $('#nour-chat');
+  const elNourIn    = $('#nour-chat-input');
+  const elNourSend  = $('#nour-chat-send');
+  const elNourClose = $('#nour-close');
+  const elNourMin   = $('#nour-min');
+
+  // Source de texte : textarea + analyse locale déjà fournie dans la page
+  const getRawText = ()=> ($('#textInput')?.value || '').trim();
+  const getAnalysisSummary = ()=>{
+    // essaye de récupérer le résumé local déjà affiché
+    const block = $('#analysis-output');
+    if (!block) return '';
+    const h4s = block.querySelectorAll('h4');
+    let out = '';
+    h4s.forEach(h=>{
+      if(/Résumé/i.test(h.textContent||'')) {
+        const nxt = h.parentElement?.querySelector('p');
+        if(nxt) out = nxt.textContent.trim();
+      }
+    });
+    return out;
+  };
+
+  // Mini NLP local
+  const norm = s => (s||'').toLowerCase().normalize("NFKD").replace(/[^\p{L}\p{N}\s-]/gu,' ');
+  const sentences = t => (t||'').split(/(?<=[.!?])\s+/).map(s=>s.trim()).filter(Boolean);
+  const topKeywords = (text, n=10)=>{
+    const stop = new Set('les des une un du le la de et que qui pour pas est sont avec sans par sur dans plus moins donc or car comme entre ainsi cela ceci ces ceux celles tres tout toute tous toutes chez fait faire avoir etre selon lorsque ou quand puis alors si sinon tandis meme contre au aux ces cet cette ce d’ des l’ m’ n’ s’ t’ qu’'.split(/\s+/));
+    const freq = new Map();
+    norm(text).split(/\s+/).forEach(w=>{
+      if(w && w.length>2 && !stop.has(w)) freq.set(w, (freq.get(w)||0)+1);
+    });
+    return [...freq.entries()].sort((a,b)=>b[1]-a[1]).slice(0,n).map(([w])=>w);
+  };
+
+  // Moteur de réponse local
+  function localAnswer(q){
+    const raw = getRawText();
+    const sum = getAnalysisSummary();
+    const qn = norm(q);
+
+    // routes rapides
+    if (!raw && !sum) {
+      if (/bonjour|salut|hello/i.test(q)) return "Bonjour ! Colle ton cours dans la zone de gauche, puis je pourrai te résumer, extraire des mots-clés et générer des QCM.";
+      return "Je suis prêt. Colle un cours (ou charge un fichier) pour que je puisse t'aider (résumé, mots-clés, plan, quiz).";
+    }
+    if (/\b(resume|résume|summary)\b/.test(qn)) {
+      const s = sum || sentences(raw).slice(0,5).join(' ');
+      return s || "Je n'ai pas encore de résumé. Lance “Analyser le cours”, puis repose la question.";
+    }
+    if (/\b(mots\s*cl[eé]s?|keywords?)\b/.test(qn)) {
+      const t = raw || sum; const kws = topKeywords(t, 12);
+      return `Mots-clés : ${kws.join(', ')}`;
+    }
+    if (/\b(plan|sections?)\b/.test(qn)) {
+      // heuristique : 6 premières phrases comme "plan"
+      const ps = sentences(raw).slice(0,6).map((s,i)=>`- Section ${i+1} — ${s}`);
+      return ps.join('\n') || "Pas assez de contenu pour un plan. Ajoute un peu de texte.";
+    }
+    if (/\b(quiz|qcm|questions?)\b/.test(qn)) {
+      // génère un QCM minimal (1 item) à partir de la 1ère phrase
+      const s = sentences(raw)[0] || (sum && sentences(sum)[0]) || '';
+      if (!s) return "Je n'ai pas assez de matière pour fabriquer un QCM. Ajoute un cours.";
+      const stem = s.replace(/[,;:–-].*$/, '.');
+      const correct = "Vrai";
+      const wrongs = ["Plutôt faux", "Faux", "Sans rapport"];
+      return `QCM rapide\nQ: ${stem}\nA) ${correct}\nB) ${wrongs[0]}\nC) ${wrongs[1]}\nD) ${wrongs[2]}\n→ Réponse: A`;
+    }
+    if (/\b(aide|help|comment|usage|utiliser)\b/.test(qn)) {
+      return "Je peux : 1) résumer ton cours (« résume »), 2) sortir des mots-clés (« mots-clés »), 3) proposer un plan (« plan »), 4) générer un mini QCM (« quiz »).";
+    }
+    // fallback : phrase clé + rappel d'options
+    const kw = topKeywords(raw || sum, 6).slice(0,6).join(', ');
+    return `Je t'ai compris. Essaie « résume », « mots-clés », « plan » ou « quiz ». Mots-clés possibles : ${kw}.`;
+  }
+
+  // Rendu bulles
+  function appendMsg(container, role, text){
+    if (!container) return;
+    const wrap = document.createElement('div');
+    wrap.className = `chat-message ${role==='user'?'user-message':'assistant-message'}`;
+    wrap.textContent = text;
+    container.appendChild(wrap);
+    container.scrollTop = container.scrollHeight;
+  }
+
+  // Branchements — Onglet "Chat"
+  function sendMain(){
+    const msg = (elChatIn?.value||'').trim();
+    if (!msg) return;
+    appendMsg(elChatMsg, 'user', msg);
+    const out = localAnswer(msg);
+    appendMsg(elChatMsg, 'assistant', out);
+    elChatIn.value = '';
+    elChatIn.focus();
+  }
+  elChatSend?.addEventListener('click', sendMain);
+  elChatIn?.addEventListener('keydown', (e)=>{ if(e.key==='Enter' && !e.shiftKey){ e.preventDefault(); sendMain(); } });
+
+  // Branchements — Chat flottant
+  function openNour(){ elNourChat?.classList.remove('hidden'); elNourIn?.focus(); }
+  function closeNour(){ elNourChat?.classList.add('hidden'); }
+  function minNour(){ elNourChat?.classList.toggle('hidden'); }
+
+  elFab?.addEventListener('click', openNour);
+  elNourClose?.addEventListener('click', closeNour);
+  elNourMin?.addEventListener('click', minNour);
+
+  function sendNour(){
+    const msg = (elNourIn?.value||'').trim();
+    const cont = $('#nour-chat-messages');
+    if (!msg || !cont) return;
+    appendMsg(cont, 'user', msg);
+    const out = localAnswer(msg);
+    appendMsg(cont, 'assistant', out);
+    elNourIn.value = '';
+    elNourIn.focus();
+  }
+  elNourSend?.addEventListener('click', sendNour);
+  elNourIn?.addEventListener('keydown', (e)=>{ if(e.key==='Enter' && !e.shiftKey){ e.preventDefault(); sendNour(); } });
+
+  // Message de bienvenue (une seule fois)
+  setTimeout(()=>{
+    appendMsg(elChatMsg, 'assistant', "Salut ! Colle ton cours puis demande « résume », « mots-clés », « plan » ou « quiz ».");
+    const cont = $('#nour-chat-messages'); if (cont) appendMsg(cont, 'assistant', "Je suis là. Clique et pose ta question !");
+  }, 200);
+})();
 
 function initThemeToggler(){
   const html=document.documentElement;
