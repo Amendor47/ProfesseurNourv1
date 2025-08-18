@@ -374,7 +374,10 @@ function buildSmartFlashcards(text) {
     return sc;
   }
   // Trie par score de pertinence et diversité
-  let ranked = sents.map(s => ({s, sc: score(s)})).sort((a,b) => b.sc - a.sc);
+  // Store original index to avoid costly indexOf lookups later
+  let ranked = sents
+    .map((s, idx) => ({ s, idx, sc: score(s) }))
+    .sort((a, b) => b.sc - a.sc);
   // Diversité : évite les doublons de type de question
   const types = [
     {re:/pourquoi|cause|raison|but|objectif|motif/i, q:'Pourquoi : '},
@@ -392,7 +395,7 @@ function buildSmartFlashcards(text) {
   const usedTypes = new Set();
   const cards = [];
   for (let i = 0; i < ranked.length && cards.length < 25; i++) {
-    const s = ranked[i].s;
+    const { s, idx } = ranked[i];
     let q = '';
     let typeFound = false;
     for (const t of types) {
@@ -422,7 +425,7 @@ function buildSmartFlashcards(text) {
     else if (/relation|lien|contraste|opposition|nuance|exception|cas particulier/i.test(s)) active = "→ Relie à un autre chapitre ou notion.";
     else active = "→ Reformule avec tes mots et donne un exemple.";
     // Réponse développée = phrase + contexte précédent
-    const context = sents.slice(Math.max(0,sents.indexOf(s)-2),sents.indexOf(s)).join(' ');
+    const context = sents.slice(Math.max(0, idx - 2), idx).join(' ');
     const a = context ? `${context} ${s}` : s;
     cards.push({ q, a, active });
   }
