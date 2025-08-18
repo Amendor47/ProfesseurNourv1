@@ -279,37 +279,6 @@
                 <button id="nour-chat-send" class="btn">Envoyer</button>
             </div>
         </div>
-<script>
-(() => {
-  const $ = (q, c=document)=>c.querySelector(q);
-  const norm = t => (t||'').replace(/\r/g,'').trim();
-  const textArea = $('#textInput');
-  const processBtn = $('#processBtn');
-  const providerSel = $('#aiProvider');
-  const providerStatus = $('#providerStatus');
-
-  function setStatus(s, ok=false){
-    if(!providerStatus) return;
-    providerStatus.textContent = s;
-    providerStatus.className = 'badge' + (ok?' success':'');
-  }
-
-  processBtn?.addEventListener('click', async ()=>{
-    const text = norm(textArea?.value||'');
-    if(!text){ setStatus('Colle d’abord un cours.'); return; }
-    const mode = (providerSel?.value || 'offline');
-    setStatus(mode==='offline' ? 'Analyse locale…' : 'IA interne (tentative)…');
-    try{
-      await runUnifiedPipeline(text, mode, setStatus);
-      setStatus(mode==='offline' ? 'Local (ultra-rapide) prêt' : 'IA interne (ok)', true);
-    }catch(e){
-      console.error(e);
-      setStatus('Analyse locale (fallback) prête', true);
-    }
-  });
-})();
-</script>
-<script src="script.js"></script>
 <script src="script.clean.js"></script>
 </body>
 </html>
