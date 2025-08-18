@@ -689,6 +689,7 @@ textarea {
 .fc-back{ transform: rotateY(180deg); }
 
 .fc-actions{display:flex;gap:10px;justify-content:center;margin-top:12px;flex-wrap:wrap}
+#fc-counter{min-width:40px;text-align:center}
 
 /* Progress bar used by flashcards */
 .paw-progress{position:relative;height:6px;border-radius:9999px;background:rgba(99,102,241,.18);overflow:hidden;margin:10px 0}

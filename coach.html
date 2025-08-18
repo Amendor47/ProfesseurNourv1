@@ -186,9 +186,8 @@
     // ...rest of pipeline code from user message...
 })();
 </script>
-[EOF]
 <!DOCTYPE html>
-<html lang="fr" class="theme-3d theme-dark theme-nour">
+<html lang="fr" class="theme-nour">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -1311,10 +1310,47 @@
         flashPane=pane;
     }
     function renderFlashcards(){
-        const cards=CM.flashcards;
-    setHTML(flashPane,`<h3>Flashcards — Questions de fond</h3><div class="fc-deck">${cards.map(card=>`<div class="flashcard"><div class="fc-inner"><div class="fc-face fc-front"><b>Q.</b> <span>${card.q}</span></div><div class="fc-face fc-back"><span>${card.a}</span></div></div></div>`).join('')}</div><div class="muted">Retourne chaque carte pour voir la réponse développée.</div>`);
-        Array.from(flashPane.querySelectorAll('.fc-inner')).forEach(inner=>{
-            inner.addEventListener('click',()=>inner.classList.toggle('flip'));
+        const cards = CM.flashcards;
+        if(!cards.length){
+            setHTML(flashPane, '<p>Aucune carte disponible.</p>');
+            return;
+        }
+        setHTML(flashPane,`
+            <h3>Flashcards — Questions de fond</h3>
+            <div class="flashcard">
+              <div class="fc-inner" id="fc-inner">
+                <div class="fc-face fc-front" id="fc-front"></div>
+                <div class="fc-face fc-back" id="fc-back"></div>
+              </div>
+            </div>
+            <div class="fc-actions">
+              <button id="fc-prev" class="btn">◀️</button>
+              <span id="fc-counter" class="muted"></span>
+              <button id="fc-next" class="btn">▶️</button>
+            </div>
+            <div class="paw-progress"><div class="bar"></div></div>
+            <div class="muted">Clique sur la carte pour la retourner.</div>
+        `);
+        let i = 0;
+        const inner = flashPane.querySelector('#fc-inner');
+        const front = flashPane.querySelector('#fc-front');
+        const back  = flashPane.querySelector('#fc-back');
+        const counter = flashPane.querySelector('#fc-counter');
+        const bar = flashPane.querySelector('.paw-progress .bar');
+        function show(idx){
+            const card = cards[idx];
+            front.innerHTML = `<b>Q.</b> <span>${card.q}</span>`;
+            back.innerHTML  = `<span>${card.a}</span>`;
+            counter.textContent = `${idx+1} / ${cards.length}`;
+            bar.style.width = ((idx+1)/cards.length*100).toFixed(1)+'%';
+        }
+        show(i);
+        inner.addEventListener('click',()=>inner.classList.toggle('flip'));
+        flashPane.querySelector('#fc-next').addEventListener('click',()=>{
+            if(i<cards.length-1){ i++; inner.classList.remove('flip'); show(i); }
+        });
+        flashPane.querySelector('#fc-prev').addEventListener('click',()=>{
+            if(i>0){ i--; inner.classList.remove('flip'); show(i); }
         });
     }
     // Stepper & Progression
