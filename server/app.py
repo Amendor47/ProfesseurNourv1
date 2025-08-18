@@ -593,15 +593,35 @@ async def firecrawl_chat(inp: FCChatIn, request: Request):
     return {"status":"ok","answer":"Firecrawl n'est pas configuré localement. Ajoutez une clé (ou utilisez OpenAI) pour des réponses générées."}
 
 # === RAG helpers (chunking + overlap + naive rerank) ===
-def _split_tokens(text: str, size: int=550, overlap: int=100) -> List[str]:
+def _split_tokens(text: str, size: int = 550, overlap: int = 100) -> List[str]:
+    """Split *text* into word chunks with overlap.
+
+    Previously this function assumed ``size > overlap`` and ``size > 0``.
+    When called with a non positive chunk size or an overlap greater than or
+    equal to the size, the ``while`` loop step would become zero or negative
+    causing an infinite loop.  The endpoint ``/rag/retrieve`` allows clients to
+    provide these parameters, so we defensively sanitise them here to avoid
+    hanging the server.
+    """
+
+    # Normalise parameters to ensure forward progress
+    if size <= 0:
+        size = 1
+    if overlap < 0:
+        overlap = 0
+    step = size - overlap
+    if step <= 0:
+        step = size
+
     words = text.split()
     chunks = []
     i = 0
     while i < len(words):
-        chunk = words[i:i+size]
-        if not chunk: break
-        chunks.append(' '.join(chunk))
-        i += size - overlap
+        chunk = words[i : i + size]
+        if not chunk:
+            break
+        chunks.append(" ".join(chunk))
+        i += step
     return chunks
 
 def _score(query: str, passage: str) -> float:
