@@ -1,192 +1,3 @@
-<script>
-(() => {
-    // ========= DOM & petites utilitaires =========
-    const $ = (q, ctx=document) => ctx.querySelector(q);
-    const $$ = (q, ctx=document) => Array.from(ctx.querySelectorAll(q));
-    const setHTML = (el, html) => { if (el) el.innerHTML = html; };
-    const analysisOut = $('#analysis-output');    // panneau Analyse
-    const ficheOut    = $('#sheet-output');       // (on ne s'en sert pas en Local Lite)
-    const qcmOut      = $('#qcm-output');         // (idem)
-    const flowOut     = $('#flow-output');        // (idem)
-    const textArea    = $('#textInput');
-    const processBtn  = $('#processBtn');
-    const providerSel = $('#aiProvider');
-    const providerStatus = $('#providerStatus');
-    // ========= Injecter un petit sélecteur de mode (Local Lite par défaut) =========
-    // On l'ajoute proprement à côté du bouton Analyser.
-    const inputCard = $('#input-card .dropzone')?.parentElement;
-    if (inputCard && !$('#speed-mode')) {
-    const bar = document.createElement('div');
-    bar.style = 'display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px';
-    bar.innerHTML = `
-    <label class="badge" style="background:transparent;border:1px dashed var(--border-color);">
-    Mode d'analyse :
-    <select id="speed-mode" class="input" style="margin-left:8px">
-          <option value="local-lite" selected>Local (ultra-rapide)</option>
-          <option value="internal-fast">IA interne (rapide)</option>
-    </select>
-    </label>
-    <small class="muted">Astuce : “Local” = pas de serveur, quasi instantané.</small>
-    `;
-    inputCard.appendChild(bar);
-    }
-    const modeSel = $('#speed-mode');
-    // ========= Helpers analyse locale rapide =========
-    function norm(t){ return (t||'').replace(/\r/g,'').trim(); }
-    function paras(t){ return norm(t).split(/\n{2,}/).map(s=>s.trim()).filter(Boolean); }
-    function sents(p){ return (p||'').split(/(?<=[\.\!\?])\s+/).map(s=>s.trim()).filter(Boolean); }
-    function keywords(text, n=12){
-    const t = text.toLowerCase().replace(/[^a-z0-9àâçéèêëîïôûùüÿœ\s\-]/gi,' ');
-    const tokens = t.split(/\s+/).filter(Boolean);
-    const stop = new Set('les des une un du le la de et que qui pour pas est sont avec sans par sur dans plus moins donc or car comme entre ainsi cela ceci ces ceux celles très tout toute tous toutes chez fait faire avoir être selon lorsque où quand puis alors si sinon tandis même contre au aux'.split(/\s+/));
-    const f = new Map();
-    for(const w of tokens){ if(w.length>2 && !stop.has(w)) f.set(w,(f.get(w)||0)+1); }
-    return Array.from(f.entries()).sort((a,b)=>b[1]-a[1]).slice(0,n).map(([w])=>w);
-    }
-    // ========= UI : loaders concis =========
-    function showSkeletons(){
-    setHTML(analysisOut, `
-    <div class="skeleton h16 w80"></div>
-    <div class="skeleton h12 w60"></div>
-    <div class="skeleton h12 w90"></div>
-    `);
-    }
-    // ========= 1) ANALYSE LOCALE SIMPLIFIÉE (DEFAULT) =========
-    function runLocalLite(){
-    const raw = norm(textArea?.value||'');
-    if(!raw){
-    setHTML(analysisOut, `<p class="banner warn">Colle d’abord un cours ou dépose un fichier.</p>`);
-    return;
-    }
-    // Petite troncature pour vitesse (suffit pour un résumé propre)
-    const text = raw.length > 12000 ? raw.slice(0, 12000) : raw;
-    const ps = paras(text);
-    const ss = ps.flatMap(sents);
-    const sum = ss.slice(0, 5).join(' ');
-    const kw  = keywords(text, 10);
-    const plan = ps.slice(0, 6).map((p,i)=>`<li>Section ${i+1} — ${(sents(p)[0] || p.slice(0,80)+'…')}</li>`).join('');
-    setHTML(analysisOut, `
-    <div class="rag-banner">
-    <div><h4>Résumé (local)</h4><p>${sum || 'Résumé indisponible'}</p></div>
-    <div><h4>Mots-clés</h4><ul>${kw.map(k=>`<li>${k}</li>`).join('')}</ul></div>
-    <div><h4>Mini-plan</h4><ul>${plan}</ul></div>
-    </div>
-    <p style="opacity:.8;margin-top:8px">Mode : <strong>Local (ultra-rapide)</strong> — aucune requête serveur.</p>
-    `);
-    }
-    // ========= 2) IA INTERNE (RAPIDE) — avec timeout & troncature + fallback =========
-    // NB: si ton back-end n’est pas prêt (cf. logs ctransformers), on retombe en local automatiquement.
-    async function runInternalFast(){
-    const raw = norm(textArea?.value||'');
-    if(!raw){ runLocalLite(); return; }
-    // Budget temps dur
-    const TIMEOUT_MS = 1800; // 1.8s max
-    // Troncature + chunking léger (évite gros payloads)
-    const MAX_CHARS = 10000;
-    const text = raw.length > MAX_CHARS ? raw.slice(0, MAX_CHARS) : raw;
-    // Corps de requête : adapte l’URL si besoin (ex.: /api/analyze)
-    const ctrl = new AbortController();
-    const timer = setTimeout(()=> ctrl.abort(), TIMEOUT_MS);
-    try{
-    const res = await fetch('/analyze/fast', {
-    method:'POST',
-    headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({
-          text,
-          // conseils d’inférence “rapide” (si ton serveur les lit) :
-          max_tokens: 256,
-          temperature: 0.2,
-          top_k: 30,
-          top_p: 0.9
-    }),
-    signal: ctrl.signal
-    });
-    clearTimeout(timer);
-    if(!res.ok) throw new Error('HTTP '+res.status);
-    const out = await res.json();
-    // on s’attend à { summary, keywords:[], plan:[] } – sinon on degrade
-    if(!out || (!out.summary && !out.keywords)){
-    runLocalLite(); return;
-    }
-    setHTML(analysisOut, `
-    <div class="rag-banner">
-          <div><h4>Résumé (IA interne)</h4><p>${out.summary || '—'}</p></div>
-          <div><h4>Mots-clés</h4><ul>${(out.keywords||[]).slice(0,10).map(k=>`<li>${k}</li>`).join('')}</ul></div>
-          <div><h4>Plan</h4><ul>${(out.plan||[]).slice(0,6).map((h,i)=>`<li>Section ${i+1} — ${h}</li>`).join('')}</ul></div>
-    </div>
-    <p style="opacity:.8;margin-top:8px">Mode : <strong>IA interne (rapide)</strong> — timeout ${TIMEOUT_MS}ms, troncature ${MAX_CHARS}c.</p>
-    `);
-    } catch(e){
-    // Serveur lent/down → bascule sans bruit
-    runLocalLite();
-    }
-    }
-    // ========= Sélection du provider & statut (on force le local par défaut) =========
-    function setStatus(text, ok=false){
-    if(!providerStatus) return;
-    providerStatus.textContent = text;
-    providerStatus.className = `badge ${ok ? 'success':''}`;
-    }
-    // 1) On met la valeur sensible par défaut
-    if (providerSel) providerSel.value = 'internal'; // on ne s’en sert pas vraiment en Local Lite
-    setStatus('Local (ultra-rapide) prêt', true);
-    // ========= Câblage du bouton Analyser =========
-    processBtn?.addEventListener('click', async ()=>{
-    showSkeletons();
-    // Choix utilisateur pour ce run
-    const mode = (modeSel?.value || 'local-lite');
-    // Par défaut => Local Lite (instantané, pas d’appel serveur)
-    if (mode === 'local-lite') {
-    // micro-pause visuelle
-    await new Promise(r=>setTimeout(r, 120));
-    runLocalLite();
-    setStatus('Local (ultra-rapide) prêt', true);
-    return;
-    }
-    // Sinon, tenter “IA interne (rapide)” avec timeout et fallback
-    setStatus('IA interne (rapide)…');
-    await new Promise(r=>setTimeout(r, 80));
-    await runInternalFast();
-    });
-})();
-</script>
-
-<script>
-/* =====================================================================
-     PIPELINE LOCAL UNIFIÉ — OFFLINE (aucune IA, aucune requête réseau)
-     Fiches (source de vérité) ⇄ Parcours ⇄ QCM ⇄ Flashcards ⇄ Planning
-     - Segmentation intelligente + résumés diversifiés
-     - QCM interactifs (feedback immédiat) + suivi de progression
-     - Synchronisation temps réel (édition des fiches)
-     - Export synthèses + QCM + planning
-     ===================================================================== */
-(function(){
-    if (window.__COACH_PIPELINE_LOCAL__) return; window.__COACH_PIPELINE_LOCAL__ = true;
-    // ...existing code...
-    /* ------------------------- Utilitaires ------------------------- */
-    const $  = (q, c=document) => c.querySelector(q);
-    const $$ = (q, c=document) => Array.from(c.querySelectorAll(q));
-    const setHTML = (el, html) => { if (el) el.innerHTML = html; };
-    const norm  = t => (t||'').replace(/\r/g,'').trim();
-    const lines = t => norm(t).split(/\n/);
-    const paras = t => norm(t).split(/\n{2,}/).map(s=>s.trim()).filter(Boolean);
-    const sents = p => (p||'').split(/(?<=[\.\!?])\s+/).map(s=>s.trim()).filter(Boolean);
-    const slug  = s => (s||'').toLowerCase().replace(/[^a-z0-9àâçéèêëîïôûùüÿœ\- ]/gi,' ').trim().replace(/\s+/g,'-').slice(0,64);
-    function tokens(text){
-        return text.toLowerCase().replace(/[^a-z0-9àâçéèêëîïôûùüÿœ\- ]/gi,' ')
-            .split(/\s+/).filter(Boolean);
-    }
-    function keywords(text, n=20){
-        const stop = new Set('les des une un du le la de et que qui pour pas est sont avec sans par sur dans plus moins donc or car comme entre ainsi cela ceci ces ceux celles très tout toute tous toutes chez fait faire avoir être selon lorsque où quand puis alors si sinon tandis même contre au aux ces cet cette ce d’ des l’ m’ n’ s’ t’ qu’'.split(/\s+/));
-        const f = new Map();
-        for(const w of tokens(text)){ if(w.length>2 && !stop.has(w)) f.set(w,(f.get(w)||0)+1); }
-        return Array.from(f.entries()).sort((a,b)=>b[1]-a[1]).slice(0,n).map(([w])=>w);
-    }
-    const jaccard = (A,B)=>{ const a=new Set(A), b=new Set(B); let i=0; a.forEach(x=>{ if(b.has(x)) i++; }); return i / Math.max(1, a.size+b.size-i); };
-    // ...rest of pipeline code from user message...
-})();
-</script>
-[EOF]
 <!DOCTYPE html>
 <html lang="fr" class="theme-3d theme-dark theme-nour">
 <head>
@@ -1122,7 +933,195 @@
     const processBtn=$('#processBtn');const inputText=$('#textInput');processBtn?.addEventListener('click',()=>{const text=norm(inputText?.value||'');if(!text){activateTab('analyse');setHTML($('#analysis-output'),`<p class="banner warn">Colle d’abord un cours ou dépose un fichier.</p>`);return;}buildModelFrom(text);renderFiches();renderQCM();renderFlashcards();renderStepper();renderProgress();});
 })();
 </script>
-</body>
+
+<script>
+(() => {
+    // ========= DOM & petites utilitaires =========
+    const $ = (q, ctx=document) => ctx.querySelector(q);
+    const $$ = (q, ctx=document) => Array.from(ctx.querySelectorAll(q));
+    const setHTML = (el, html) => { if (el) el.innerHTML = html; };
+    const analysisOut = $('#analysis-output');    // panneau Analyse
+    const ficheOut    = $('#sheet-output');       // (on ne s'en sert pas en Local Lite)
+    const qcmOut      = $('#qcm-output');         // (idem)
+    const flowOut     = $('#flow-output');        // (idem)
+    const textArea    = $('#textInput');
+    const processBtn  = $('#processBtn');
+    const providerSel = $('#aiProvider');
+    const providerStatus = $('#providerStatus');
+    // ========= Injecter un petit sélecteur de mode (Local Lite par défaut) =========
+    // On l'ajoute proprement à côté du bouton Analyser.
+    const inputCard = $('#input-card .dropzone')?.parentElement;
+    if (inputCard && !$('#speed-mode')) {
+    const bar = document.createElement('div');
+    bar.style = 'display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px';
+    bar.innerHTML = `
+    <label class="badge" style="background:transparent;border:1px dashed var(--border-color);">
+    Mode d'analyse :
+    <select id="speed-mode" class="input" style="margin-left:8px">
+          <option value="local-lite" selected>Local (ultra-rapide)</option>
+          <option value="internal-fast">IA interne (rapide)</option>
+    </select>
+    </label>
+    <small class="muted">Astuce : “Local” = pas de serveur, quasi instantané.</small>
+    `;
+    inputCard.appendChild(bar);
+    }
+    const modeSel = $('#speed-mode');
+    // ========= Helpers analyse locale rapide =========
+    function norm(t){ return (t||'').replace(/\r/g,'').trim(); }
+    function paras(t){ return norm(t).split(/\n{2,}/).map(s=>s.trim()).filter(Boolean); }
+    function sents(p){ return (p||'').split(/(?<=[\.\!\?])\s+/).map(s=>s.trim()).filter(Boolean); }
+    function keywords(text, n=12){
+    const t = text.toLowerCase().replace(/[^a-z0-9àâçéèêëîïôûùüÿœ\s\-]/gi,' ');
+    const tokens = t.split(/\s+/).filter(Boolean);
+    const stop = new Set('les des une un du le la de et que qui pour pas est sont avec sans par sur dans plus moins donc or car comme entre ainsi cela ceci ces ceux celles très tout toute tous toutes chez fait faire avoir être selon lorsque où quand puis alors si sinon tandis même contre au aux'.split(/\s+/));
+    const f = new Map();
+    for(const w of tokens){ if(w.length>2 && !stop.has(w)) f.set(w,(f.get(w)||0)+1); }
+    return Array.from(f.entries()).sort((a,b)=>b[1]-a[1]).slice(0,n).map(([w])=>w);
+    }
+    // ========= UI : loaders concis =========
+    function showSkeletons(){
+    setHTML(analysisOut, `
+    <div class="skeleton h16 w80"></div>
+    <div class="skeleton h12 w60"></div>
+    <div class="skeleton h12 w90"></div>
+    `);
+    }
+    // ========= 1) ANALYSE LOCALE SIMPLIFIÉE (DEFAULT) =========
+    function runLocalLite(){
+    const raw = norm(textArea?.value||'');
+    if(!raw){
+    setHTML(analysisOut, `<p class="banner warn">Colle d’abord un cours ou dépose un fichier.</p>`);
+    return;
+    }
+    // Petite troncature pour vitesse (suffit pour un résumé propre)
+    const text = raw.length > 12000 ? raw.slice(0, 12000) : raw;
+    const ps = paras(text);
+    const ss = ps.flatMap(sents);
+    const sum = ss.slice(0, 5).join(' ');
+    const kw  = keywords(text, 10);
+    const plan = ps.slice(0, 6).map((p,i)=>`<li>Section ${i+1} — ${(sents(p)[0] || p.slice(0,80)+'…')}</li>`).join('');
+    setHTML(analysisOut, `
+    <div class="rag-banner">
+    <div><h4>Résumé (local)</h4><p>${sum || 'Résumé indisponible'}</p></div>
+    <div><h4>Mots-clés</h4><ul>${kw.map(k=>`<li>${k}</li>`).join('')}</ul></div>
+    <div><h4>Mini-plan</h4><ul>${plan}</ul></div>
+    </div>
+    <p style="opacity:.8;margin-top:8px">Mode : <strong>Local (ultra-rapide)</strong> — aucune requête serveur.</p>
+    `);
+    }
+    // ========= 2) IA INTERNE (RAPIDE) — avec timeout & troncature + fallback =========
+    // NB: si ton back-end n’est pas prêt (cf. logs ctransformers), on retombe en local automatiquement.
+    async function runInternalFast(){
+    const raw = norm(textArea?.value||'');
+    if(!raw){ runLocalLite(); return; }
+    // Budget temps dur
+    const TIMEOUT_MS = 1800; // 1.8s max
+    // Troncature + chunking léger (évite gros payloads)
+    const MAX_CHARS = 10000;
+    const text = raw.length > MAX_CHARS ? raw.slice(0, MAX_CHARS) : raw;
+    // Corps de requête : adapte l’URL si besoin (ex.: /api/analyze)
+    const ctrl = new AbortController();
+    const timer = setTimeout(()=> ctrl.abort(), TIMEOUT_MS);
+    try{
+    const res = await fetch('/analyze/fast', {
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({
+          text,
+          // conseils d’inférence “rapide” (si ton serveur les lit) :
+          max_tokens: 256,
+          temperature: 0.2,
+          top_k: 30,
+          top_p: 0.9
+    }),
+    signal: ctrl.signal
+    });
+    clearTimeout(timer);
+    if(!res.ok) throw new Error('HTTP '+res.status);
+    const out = await res.json();
+    // on s’attend à { summary, keywords:[], plan:[] } – sinon on degrade
+    if(!out || (!out.summary && !out.keywords)){
+    runLocalLite(); return;
+    }
+    setHTML(analysisOut, `
+    <div class="rag-banner">
+          <div><h4>Résumé (IA interne)</h4><p>${out.summary || '—'}</p></div>
+          <div><h4>Mots-clés</h4><ul>${(out.keywords||[]).slice(0,10).map(k=>`<li>${k}</li>`).join('')}</ul></div>
+          <div><h4>Plan</h4><ul>${(out.plan||[]).slice(0,6).map((h,i)=>`<li>Section ${i+1} — ${h}</li>`).join('')}</ul></div>
+    </div>
+    <p style="opacity:.8;margin-top:8px">Mode : <strong>IA interne (rapide)</strong> — timeout ${TIMEOUT_MS}ms, troncature ${MAX_CHARS}c.</p>
+    `);
+    } catch(e){
+    // Serveur lent/down → bascule sans bruit
+    runLocalLite();
+    }
+    }
+    // ========= Sélection du provider & statut (on force le local par défaut) =========
+    function setStatus(text, ok=false){
+    if(!providerStatus) return;
+    providerStatus.textContent = text;
+    providerStatus.className = `badge ${ok ? 'success':''}`;
+    }
+    // 1) On met la valeur sensible par défaut
+    if (providerSel) providerSel.value = 'internal'; // on ne s’en sert pas vraiment en Local Lite
+    setStatus('Local (ultra-rapide) prêt', true);
+    // ========= Câblage du bouton Analyser =========
+    processBtn?.addEventListener('click', async ()=>{
+    showSkeletons();
+    // Choix utilisateur pour ce run
+    const mode = (modeSel?.value || 'local-lite');
+    // Par défaut => Local Lite (instantané, pas d’appel serveur)
+    if (mode === 'local-lite') {
+    // micro-pause visuelle
+    await new Promise(r=>setTimeout(r, 120));
+    runLocalLite();
+    setStatus('Local (ultra-rapide) prêt', true);
+    return;
+    }
+    // Sinon, tenter “IA interne (rapide)” avec timeout et fallback
+    setStatus('IA interne (rapide)…');
+    await new Promise(r=>setTimeout(r, 80));
+    await runInternalFast();
+    });
+})();
+</script>
+
+<script>
+/* =====================================================================
+     PIPELINE LOCAL UNIFIÉ — OFFLINE (aucune IA, aucune requête réseau)
+     Fiches (source de vérité) ⇄ Parcours ⇄ QCM ⇄ Flashcards ⇄ Planning
+     - Segmentation intelligente + résumés diversifiés
+     - QCM interactifs (feedback immédiat) + suivi de progression
+     - Synchronisation temps réel (édition des fiches)
+     - Export synthèses + QCM + planning
+     ===================================================================== */
+(function(){
+    if (window.__COACH_PIPELINE_LOCAL__) return; window.__COACH_PIPELINE_LOCAL__ = true;
+    // ...existing code...
+    /* ------------------------- Utilitaires ------------------------- */
+    const $  = (q, c=document) => c.querySelector(q);
+    const $$ = (q, c=document) => Array.from(c.querySelectorAll(q));
+    const setHTML = (el, html) => { if (el) el.innerHTML = html; };
+    const norm  = t => (t||'').replace(/\r/g,'').trim();
+    const lines = t => norm(t).split(/\n/);
+    const paras = t => norm(t).split(/\n{2,}/).map(s=>s.trim()).filter(Boolean);
+    const sents = p => (p||'').split(/(?<=[\.\!?])\s+/).map(s=>s.trim()).filter(Boolean);
+    const slug  = s => (s||'').toLowerCase().replace(/[^a-z0-9àâçéèêëîïôûùüÿœ\- ]/gi,' ').trim().replace(/\s+/g,'-').slice(0,64);
+    function tokens(text){
+        return text.toLowerCase().replace(/[^a-z0-9àâçéèêëîïôûùüÿœ\- ]/gi,' ')
+            .split(/\s+/).filter(Boolean);
+    }
+    function keywords(text, n=20){
+        const stop = new Set('les des une un du le la de et que qui pour pas est sont avec sans par sur dans plus moins donc or car comme entre ainsi cela ceci ces ceux celles très tout toute tous toutes chez fait faire avoir être selon lorsque où quand puis alors si sinon tandis même contre au aux ces cet cette ce d’ des l’ m’ n’ s’ t’ qu’'.split(/\s+/));
+        const f = new Map();
+        for(const w of tokens(text)){ if(w.length>2 && !stop.has(w)) f.set(w,(f.get(w)||0)+1); }
+        return Array.from(f.entries()).sort((a,b)=>b[1]-a[1]).slice(0,n).map(([w])=>w);
+    }
+    const jaccard = (A,B)=>{ const a=new Set(A), b=new Set(B); let i=0; a.forEach(x=>{ if(b.has(x)) i++; }); return i / Math.max(1, a.size+b.size-i); };
+    // ...rest of pipeline code from user message...
+})();
+</script>
 
 <!-- Pipeline local JS unifié, corrigé et sans doublons -->
 <script>
@@ -1397,3 +1396,5 @@
     });
 })();
 </script>
+</body>
+</html>
