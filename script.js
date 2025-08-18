@@ -199,6 +199,46 @@ function renderSmartFlashcards(text) {
     inner.addEventListener('click', () => inner.classList.toggle('flip'));
   });
 }
+
+/* ---------- QCM interactifs ---------- */
+function renderQCM() {
+  const host = document.getElementById('qcm-output');
+  if (!host || !window.CM) return;
+  const items = CM.sections.flatMap(sec => sec.quiz || []);
+  host.innerHTML = items
+    .map((it, qi) => `
+      <div class="qcm-item" data-q="${qi}">
+        <p><strong>${it.q}</strong></p>
+        <div class="qcm-options">
+          ${it.options
+            .map(
+              (opt, idx) =>
+                `<label><input type="radio" name="q-${qi}" value="${idx}"> ${opt}</label>`
+            )
+            .join('')}
+        </div>
+        <div class="feedback hidden"></div>
+      </div>`)
+    .join('');
+  host.querySelectorAll('.qcm-item').forEach((item, qi) => {
+    const q = items[qi];
+    const labels = item.querySelectorAll('.qcm-options label');
+    labels.forEach((lab, idx) => {
+      lab.addEventListener('click', () => {
+        labels.forEach(l => l.classList.remove('qq-correct', 'qq-wrong'));
+        lab.classList.add(idx === q.correctIndex ? 'qq-correct' : 'qq-wrong');
+        const fb = item.querySelector('.feedback');
+        if (fb) {
+          fb.classList.remove('hidden');
+          fb.textContent =
+            idx === q.correctIndex
+              ? 'Bravo ! ✔️'
+              : `À revoir : ${q.explain || ''}`;
+        }
+      });
+    });
+  });
+}
 // Branche sur analyse
 const textArea = document.getElementById('textInput');
 const processBtn = document.getElementById('processBtn');
