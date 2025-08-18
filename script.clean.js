@@ -308,19 +308,26 @@ function ensureFlashcardsPane(){
   return pane;
 }
 function renderFlashcards(){
-  const host = ensureFlashcardsPane();
-  host.innerHTML=CM.qa.flashcards.map((fc,i)=>`
+  const host = document.getElementById('flashcards-pane');
+  if(!host) return;
+  host.innerHTML = CM.qa.flashcards.map((fc,i)=>`
     <div class="flashcard" data-i="${i}">
-      <div class="flashcard-front">${fc.q}</div>
-      <div class="flashcard-back hidden">${fc.a}</div>
-      <button class="flip">Retourner</button>
+      <div class="flashcard-inner">
+        <div class="flashcard-front">${fc.q}</div>
+        <div class="flashcard-back hidden">${fc.a}</div>
+      </div>
+      <button class="flip-btn">↺ Retourner</button>
     </div>
   `).join('');
   host.querySelectorAll('.flashcard').forEach(card=>{
-    const front=card.querySelector('.flashcard-front');
-    const back=card.querySelector('.flashcard-back');
-    card.querySelector('.flip').addEventListener('click',()=>{
-      front.classList.toggle('hidden'); back.classList.toggle('hidden');
+    const inner = card.querySelector('.flashcard-inner');
+    const front = card.querySelector('.flashcard-front');
+    const back = card.querySelector('.flashcard-back');
+    const flipBtn = card.querySelector('.flip-btn');
+    flipBtn.addEventListener('click',()=>{
+      inner.classList.toggle('flipped');
+      front.classList.toggle('hidden');
+      back.classList.toggle('hidden');
     });
   });
 }
@@ -378,10 +385,14 @@ async function runUnifiedPipeline(text, mode='offline', setStatus=(s)=>{}){
   // Ouvre/ferme le modal
   function wireSettings(){
     ensureSettingsModal();
-    const btn = $('#settingsBtn') || $('[data-role="settings"]') || $('#gearBtn');
+    // Cherche plus large si bouton absent
+    const btn = document.querySelector('#settingsBtn, [data-role="settings"], #gearBtn, .settings-btn');
     if(!btn) return;
     if(btn.dataset.bound) return; btn.dataset.bound='1';
-    btn.addEventListener('click', (e)=>{ e.preventDefault(); $('#settingsModal').classList.add('open'); });
+    btn.addEventListener('click', (e)=>{
+      e.preventDefault();
+      document.getElementById('settingsModal').classList.add('open');
+    });
   }
 
   // Déverrouille les onglets quand des données existent
