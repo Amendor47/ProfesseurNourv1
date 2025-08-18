@@ -1,7 +1,7 @@
 from __future__ import annotations
 from typing import List, Dict
-from ..embeddings.factory import EmbeddingFactory
-from ..vectorstores.faiss_store import FAISSStore
+from server.embeddings.factory import EmbeddingFactory
+from server.vectorstores.faiss_store import FAISSStore
 
 class RagChain:
     def __init__(self, embed: EmbeddingFactory, store: FAISSStore, llm):

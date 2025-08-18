@@ -1,6 +1,9 @@
 /* === script.clean.js (REPLACE) ===================================== */
 const CM = { meta:{title:"",lang:"fr"}, text:"", sections:[], conceptIndex:{}, qa:{ qcm:[], flashcards:[] } };
 
+const $  = (sel, ctx=document) => ctx.querySelector(sel);
+const $$ = (sel, ctx=document) => Array.from(ctx.querySelectorAll(sel));
+
 const normalize = s => (s||"").toLowerCase().normalize("NFKD").replace(/[^\p{L}\p{N}\s-]/gu," ");
 const tokens = s => normalize(s).split(/\s+/).filter(w=>w.length>2);
 const uniq = a => [...new Set(a)];
@@ -430,6 +433,20 @@ async function runUnifiedPipeline(text, mode='offline'){
     synth?.classList.add('active');
   }
 
+  function initTabs(){
+    const buttons = $$('.tab-link');
+    const panes   = $$('.tab-pane');
+    buttons.forEach(btn=>{
+      btn.addEventListener('click',()=>{
+        buttons.forEach(b=>b.classList.remove('active'));
+        panes.forEach(p=>p.classList.remove('active'));
+        btn.classList.add('active');
+        const tab = document.getElementById(btn.dataset.tab);
+        if(tab) tab.classList.add('active');
+      });
+    });
+  }
+
   function wireSettings(){
     ensureSettingsModal();
     const btn = document.querySelector('#settingsBtn, [data-role="settings"], #gearBtn, .settings-btn');
@@ -463,6 +480,7 @@ async function runUnifiedPipeline(text, mode='offline'){
   }
 
   document.addEventListener('DOMContentLoaded', ()=>{
+    initTabs();
     wireSettings();
     wireAnalyze();
   });
