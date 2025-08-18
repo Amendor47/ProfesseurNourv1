@@ -338,10 +338,22 @@ async function tryInternal(text){
   }catch(e){ try{ clearTimeout(timer); }catch{}; return null; }
 }
 async function runUnifiedPipeline(text, mode='offline'){
+  // Dégage le thread principal entre chaque étape lourde pour éviter
+  // que l'UI ne se fige pendant l'ajout d'un cours volumineux.
+  // Un simple yield asynchrone suffit ici (pas besoin de Web Worker).
+  const yieldToUI = () => new Promise(r => setTimeout(r));
+
   buildModelFromText(text);
+  await yieldToUI();
+
   indexConcepts();
+  await yieldToUI();
+
   buildQCM();
+  await yieldToUI();
+
   buildFlashcards();
+  await yieldToUI();
   if(mode!=='offline'){
     const out = await tryInternal(text);
     if(out) mergeInternalOut(out);
@@ -407,6 +419,11 @@ async function runUnifiedPipeline(text, mode='offline'){
       const text = norm(textArea?.value);
       if(!text){ alert('Colle un texte ou charge un exemple.'); return; }
 
+      // feedback utilisateur et prévention des doubles clics
+      const oldLabel = processBtn.textContent;
+      processBtn.disabled = true;
+      processBtn.textContent = 'Analyse en cours…';
+
       try{
         await runUnifiedPipeline(text,'offline');
         renderFiches(); renderQCM(); renderFlashcards();
@@ -414,6 +431,9 @@ async function runUnifiedPipeline(text, mode='offline'){
       }catch(err){
         console.error('Erreur analyse:',err);
         alert("Erreur pendant l'analyse (voir console).");
+      } finally {
+        processBtn.disabled = false;
+        processBtn.textContent = oldLabel;
       }
     });
   }
