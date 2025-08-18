@@ -33,3 +33,10 @@ def test_validate_sheet_schema():
     }
     r = client.post('/validate/sheet', json=payload)
     assert r.status_code == 200 and r.json().get('ok') is True
+
+
+def test_extract_summary():
+    body = {"text": "La révolution française commence en 1789. Elle change profondément la société. Les idées de liberté se diffusent."}
+    r = client.post('/v1/extract', json=body)
+    data = r.json().get('data', {})
+    assert r.status_code == 200 and data.get('resume')

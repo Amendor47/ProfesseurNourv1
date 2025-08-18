@@ -219,7 +219,7 @@ def _norm(s: str) -> str:
 def extract(inp: ExtractIn):
     text = (inp.text or inp.content or "").strip()
     if not text:
-        return {"data": {"notions_cles": [], "definitions": [], "questions": []}}
+        return {"data": {"notions_cles": [], "definitions": [], "questions": [], "resume": ""}}
 
     tokens = re.findall(r"[A-Za-zÀ-ÿ]{3,}", text)
     stop = set("le la les de des du un une et ou a au aux en dans pour par avec sans sur sous entre d l que qui quoi dont est sont ete été etre être ce cet cette ces il elle nous vous on ne pas".split())
@@ -235,8 +235,17 @@ def extract(inp: ExtractIn):
             if len(defs) >= 8:
                 break
 
+    sentences = re.split(r"(?<=[\.!?…])\s+", text)
+    scores = []
+    for i, s in enumerate(sentences):
+        words = [_norm(t) for t in re.findall(r"[A-Za-zÀ-ÿ]{3,}", s)]
+        score = sum(cnt[w] for w in words)
+        scores.append((i, score, s.strip()))
+    top = sorted(scores, key=lambda x: x[1], reverse=True)[:3]
+    resume = " ".join([s for i,_,s in sorted(top, key=lambda x: x[0])])
+
     questions = [f"Expliquez la notion: « {w} »." for w in notions[:6]]
-    return {"data": {"notions_cles": notions, "definitions": defs, "questions": questions}}
+    return {"data": {"notions_cles": notions, "definitions": defs, "questions": questions, "resume": resume}}
 
 # === Validation utilities (JSON schema) ===
 from jsonschema import validate as _validate, ValidationError
