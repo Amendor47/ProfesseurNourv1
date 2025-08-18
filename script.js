@@ -5,6 +5,8 @@ document.addEventListener("DOMContentLoaded", () => {
   initFileUpload();
   initChat();
   initAnalysis();
+  initTestMode();
+  initThemeToggler();
 });
 
 /* ---------- Gestion des onglets ---------- */
@@ -109,6 +111,92 @@ function addMessage(role, text, container) {
   container.scrollTop = container.scrollHeight;
 }
 
+function initTestMode() {
+  const startBtn = document.getElementById('test-start');
+  const qPane = document.getElementById('test-question-pane');
+  const questionEl = document.getElementById('test-question');
+  const optionsEl = document.getElementById('test-options');
+  const answerInput = document.getElementById('test-answer');
+  const submitBtn = document.getElementById('test-submit');
+  const feedbackEl = document.getElementById('test-feedback');
+  const progressEl = document.getElementById('test-progress');
+  let index = 0, score = 0, streak = 0;
+  const questions = [
+    { type:'mcq', q:'Quelle est la capitale de la France ?', options:['Paris','Lyon','Marseille','Nice'], answer:'Paris' },
+    { type:'tf', q:'La Terre est plate.', answer:false },
+    { type:'short', q:'Qui a écrit "Le Petit Prince" ?', answer:'Antoine de Saint-Exupéry' }
+  ];
+  function showQuestion(){
+    const q = questions[index];
+    if(!q) return;
+    feedbackEl.classList.add('hidden');
+    optionsEl.innerHTML='';
+    answerInput.value='';
+    answerInput.classList.add('hidden');
+    submitBtn.classList.add('hidden');
+    questionEl.textContent = q.q;
+    if(q.type==='mcq'){
+      optionsEl.innerHTML = q.options.map(opt=>`<label><input type="radio" name="test-${index}" value="${opt}"> ${opt}</label>`).join('');
+      optionsEl.querySelectorAll('label').forEach(l=>{
+        l.addEventListener('click',()=>checkAnswer(l.querySelector('input').value));
+      });
+    } else if(q.type==='tf'){
+      optionsEl.innerHTML = `<label><input type="radio" name="test-${index}" value="true"> Vrai</label><label><input type="radio" name="test-${index}" value="false"> Faux</label>`;
+      optionsEl.querySelectorAll('label').forEach(l=>{
+        l.addEventListener('click',()=>checkAnswer(l.querySelector('input').value === 'true'));
+      });
+    } else {
+      answerInput.classList.remove('hidden');
+      submitBtn.classList.remove('hidden');
+    }
+  }
+  function checkAnswer(val){
+    const q = questions[index];
+    let correct=false;
+    if(q.type==='mcq') correct = val===q.answer;
+    else if(q.type==='tf') correct = val===q.answer;
+    else correct = val.trim().toLowerCase()===q.answer.toLowerCase();
+    feedbackEl.classList.remove('hidden');
+    if(correct){
+      feedbackEl.textContent='✅ Correct';
+      score++; streak++; if(streak===3) feedbackEl.textContent+=' 🔥 Tu progresses vite !';
+    } else {
+      feedbackEl.textContent=`❌ Réponse : ${q.answer}`;
+      streak=0;
+    }
+    progressEl.value=++index;
+    if(index<questions.length) setTimeout(showQuestion,800);
+    else feedbackEl.textContent+=` — Score ${score}/${questions.length}`;
+  }
+  submitBtn?.addEventListener('click',()=>{ const val=answerInput.value; if(!val.trim()) return; checkAnswer(val); });
+  startBtn?.addEventListener('click',()=>{
+    index=0;score=0;streak=0;progressEl.max=questions.length;progressEl.value=0;
+    document.getElementById('test-start-pane')?.classList.add('hidden');
+    qPane?.classList.remove('hidden');
+    showQuestion();
+  });
+}
+
+function initThemeToggler(){
+  const html=document.documentElement;
+  const headerSel=document.getElementById('themeSelect');
+  const settingsSel=document.getElementById('theme-select');
+  const map={nour:'theme-nour',studycave:'theme-studycave'};
+  const rev={'theme-nour':'nour','theme-studycave':'studycave'};
+  let saved=localStorage.getItem('selected-theme')||'theme-nour';
+  if(saved==='theme-light') saved='theme-nour';
+  function applyClass(cls){
+    html.classList.remove('theme-nour','theme-light','theme-studycave');
+    html.classList.add(cls,'theme-dark');
+    localStorage.setItem('selected-theme',cls);
+    if(headerSel) headerSel.value=rev[cls]||'nour';
+    if(settingsSel) settingsSel.value=cls;
+  }
+  applyClass(saved);
+  headerSel?.addEventListener('change',()=>applyClass(map[headerSel.value]||'theme-nour'));
+  settingsSel?.addEventListener('change',()=>applyClass(settingsSel.value||'theme-nour'));
+}
+
 // === Flashcards : jusqu'à 25, ultra-pertinentes, logique d'analyse avancée & accompagnement actif ===
 function buildSmartFlashcards(text) {
   // Analyse avancée : pertinence, diversité, accompagnement
@@ -186,17 +274,19 @@ function renderSmartFlashcards(text) {
     <div class="fc-deck">
       ${cards.map(card => `
         <div class="flashcard">
-          <div class="fc-inner">
-            <div class="fc-face fc-front"><b>Q.</b> ${card.q}<br><small class="muted">${card.active}</small></div>
-            <div class="fc-face fc-back"><span>${card.a}</span></div>
+          <div class="flashcard-inner">
+            <div class="flashcard-front"><b>Q.</b> ${card.q}<br><small class="muted">${card.active}</small></div>
+            <div class="flashcard-back"><span>${card.a}</span></div>
           </div>
+          <button class="btn flip-btn">Retourner</button>
         </div>
       `).join('')}
     </div>
-    <div class="muted">Retourne chaque carte pour voir la réponse développée.</div>
   `;
-  Array.from(pane.querySelectorAll('.fc-inner')).forEach(inner => {
-    inner.addEventListener('click', () => inner.classList.toggle('flip'));
+  pane.querySelectorAll('.flip-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      btn.closest('.flashcard').classList.toggle('flipped');
+    });
   });
 }
 
