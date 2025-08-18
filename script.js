@@ -247,6 +247,48 @@ function initTestMode() {
     return `Je t'ai compris. Essaie « résume », « mots-clés », « plan » ou « quiz ». Mots-clés possibles : ${kw}.`;
   }
 
+  // --- Appel LLM selon fournisseur sélectionné ---
+  async function askLLM(question){
+    const providerSel = document.getElementById('aiProvider');
+    const provider = providerSel?.value || 'offline';
+    const apiKey = (document.getElementById('apiKey')?.value || '').trim();
+    const messages = [{role:'user', content: question}];
+    try {
+      if (provider === 'internal') {
+        const res = await fetch('/api/chat', {
+          method:'POST',
+          headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({messages, context: getRawText()})
+        });
+        const data = await res.json();
+        return (data.reply || data.error || '');
+      } else if (provider === 'openai') {
+        const headers = {'Content-Type':'application/json'};
+        if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`;
+        const res = await fetch('/chat', {
+          method:'POST',
+          headers,
+          body: JSON.stringify({messages, provider:'openai', api_key: apiKey})
+        });
+        const data = await res.json();
+        return (data.output || data.error || '');
+      } else if (provider === 'firecrawl') {
+        const headers = {'Content-Type':'application/json'};
+        if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`;
+        const res = await fetch('/firecrawl/chat', {
+          method:'POST', headers, body: JSON.stringify({messages, api_key: apiKey})
+        });
+        const data = await res.json();
+        return (data.answer || data.error || '');
+      }
+    } catch(err){
+      console.error(err);
+      return `Erreur: ${err.message}`;
+    }
+    // Fallback local
+    return localAnswer(question);
+  }
+
   // Rendu bulles
   function appendMsg(container, role, text){
     if (!container) return;
@@ -258,14 +300,14 @@ function initTestMode() {
   }
 
   // Branchements — Onglet "Chat"
-  function sendMain(){
+  async function sendMain(){
     const msg = (elChatIn?.value||'').trim();
     if (!msg) return;
     appendMsg(elChatMsg, 'user', msg);
-    const out = localAnswer(msg);
-    appendMsg(elChatMsg, 'assistant', out);
     elChatIn.value = '';
     elChatIn.focus();
+    const out = await askLLM(msg);
+    appendMsg(elChatMsg, 'assistant', out || '');
   }
   elChatSend?.addEventListener('click', sendMain);
   elChatIn?.addEventListener('keydown', (e)=>{ if(e.key==='Enter' && !e.shiftKey){ e.preventDefault(); sendMain(); } });
@@ -279,15 +321,15 @@ function initTestMode() {
   elNourClose?.addEventListener('click', closeNour);
   elNourMin?.addEventListener('click', minNour);
 
-  function sendNour(){
+  async function sendNour(){
     const msg = (elNourIn?.value||'').trim();
     const cont = $('#nour-chat-messages');
     if (!msg || !cont) return;
     appendMsg(cont, 'user', msg);
-    const out = localAnswer(msg);
-    appendMsg(cont, 'assistant', out);
     elNourIn.value = '';
     elNourIn.focus();
+    const out = await askLLM(msg);
+    appendMsg(cont, 'assistant', out || '');
   }
   elNourSend?.addEventListener('click', sendNour);
   elNourIn?.addEventListener('keydown', (e)=>{ if(e.key==='Enter' && !e.shiftKey){ e.preventDefault(); sendNour(); } });
