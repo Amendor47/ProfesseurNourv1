@@ -680,16 +680,13 @@ textarea {
   font-size: 1.1rem;
   line-height: 1.5;
 }
-.fc-toolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px}
-.fc-deck{position:relative;display:grid;place-items:center;min-height:260px;padding:12px;perspective:1000px}
-.fc-card{position:relative;width:min(640px,100%);min-height:240px;border-radius:16px;border:1px solid var(--border-color);background:var(--surface-color);box-shadow:var(--shadow-md);transform-style:preserve-3d;transition:transform .6s ease, box-shadow .2s ease;will-change:transform}
-.fc-card:hover{box-shadow:0 16px 40px rgba(20,30,58,.18)}
-.fc-card.is-flipped{transform:rotateY(180deg)}
-.fc-card .face{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:24px 20px;backface-visibility:hidden;border-radius:16px;overflow:auto}
-.fc-card .face.front{transform:rotateY(0deg)}
-.fc-card .face.back{transform:rotateY(180deg)}
-.fc-card .face h3{margin:0;font-size:1.2rem}
-.fc-card .face p{margin:0;font-size:1rem;line-height:1.6}
+.fc-toolbar{ display:flex; gap:8px; flex-wrap:wrap; align-items:center; justify-content:center; }
+.fc-deck{ display:flex; flex-direction:column; gap:10px; align-items:center; }
+.flashcard{ width:min(720px,96%); height:280px; perspective:1200px; position:relative; }
+.fc-inner{ position:absolute; inset:0; border:1px solid var(--border-color); border-radius:14px; background:var(--surface-2); display:flex; align-items:center; justify-content:center; padding:18px; text-align:center; font-size:1.05rem; transform-style:preserve-3d; transition:transform .5s ease; }
+.fc-inner.flip{ transform: rotateY(180deg); }
+.fc-face{ position:absolute; inset:0; backface-visibility:hidden; display:flex; align-items:center; justify-content:center; padding:20px; text-align:center; line-height:1.5; }
+.fc-back{ transform: rotateY(180deg); }
 
 .fc-actions{display:flex;gap:10px;justify-content:center;margin-top:12px;flex-wrap:wrap}
 

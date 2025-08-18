@@ -10,7 +10,8 @@
   const esc = (s)=> String(s||'').replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));
   const API_BASE = location.protocol.startsWith('http') ? location.origin : 'http://127.0.0.1:8000';
   const store = {
-    get provider(){ return localStorage.getItem('provider') || 'internal'; },
+    // Provider stored in localStorage; default to fully offline mode
+    get provider(){ return localStorage.getItem('provider') || 'offline'; },
     set provider(v){ try{ localStorage.setItem('provider', v); }catch{} },
     get apiKey(){ return localStorage.getItem('apiKey') || ''; },
     set apiKey(v){ try{ localStorage.setItem('apiKey', v); }catch{} },
@@ -34,10 +35,14 @@
   // --- Provider status ---
   async function updateProviderStatus(){
     const sel=$('#aiProvider'); const keyIn=$('#apiKey'); const badge=$('#providerStatus');
-    const provider=(sel&&sel.value)||store.provider||'internal'; const key=(keyIn&&keyIn.value)||store.apiKey||'';
+    const provider=(sel&&sel.value)||store.provider||'offline'; const key=(keyIn&&keyIn.value)||store.apiKey||'';
     store.provider=provider; if(keyIn) store.apiKey=keyIn.value;
     if(badge){ badge.textContent='Test…'; badge.style.background='transparent'; badge.style.border='1px solid var(--border-color, #334155)'; }
     try{
+      if(provider==='offline'){
+        if(badge){ badge.textContent='Local (offline)'; badge.className='badge success'; }
+        return;
+      }
       if(provider==='internal'){
         const h=await getHealth(); const ok=!!h; const ready=!!(h&&h.llm&&h.llm.ready===true);
         const def=(h&&h.llm&&h.llm.default_model)?` • modèle: ${h.llm.default_model}`:'';
@@ -380,14 +385,16 @@
     const themes = _segmentThemes(txt);
     function classify(text){ const t=String(text||'').toLowerCase(); if(/(règle|loi|si\s.+\salors|doit|il faut)/.test(t)) return 'RÈGLE'; if(/(définition|est appelé|on appelle|désigne)/.test(t)) return 'DÉFINITION'; if(/(théorème|propriété|proposition|lemme)/.test(t)) return 'THÉORÈME'; if(/(formule|≈|=|∑|\b\d+\s*%\b|\^|≤|≥|->)/.test(t)) return 'FORMULE'; if(/(attention|piège|exception|sauf|ne pas confondre)/.test(t)) return 'EXCEPTION'; return 'CONCEPT'; }
     const cards=[]; themes.forEach(t=>{ _splitSentences(t.body).slice(0,20).forEach(s=>{ const type=classify(s); let q=''; const head=_keywords(s,1)[0]||'ce concept'; if(type==='DÉFINITION') q=`Qu'est-ce que ${head} ?`; else if(type==='RÈGLE') q=`Quelle règle s'applique à ${head} ?`; else if(type==='FORMULE') q='Quelle est la formule utile ?'; else if(type==='THÉORÈME') q='Quel énoncé retenir ?'; else if(type==='EXCEPTION') q='Quelle exception faut-il connaître ?'; else q=`Point clé (${t.title}) ?`; cards.push({ theme:t.title, type, q, a:s }); }); });
+    cards.forEach((c,i)=>{ c.q = `Q${i+1}. ${c.q}`; });
     const byTheme={}; cards.forEach(c=>{ (byTheme[c.theme]=byTheme[c.theme]||[]).push(c); });
-    const filters = `<div class="sheet-toolbar"><div style="display:flex;gap:6px;flex-wrap:wrap"><strong>Filtres</strong><select id="fc-theme" class="input"><option value="">Tous les thèmes</option>${Object.keys(byTheme).map(t=>`<option>${esc(t)}</option>`).join('')}</select><select id="fc-type" class="input"><option value="">Tous les types</option>${['RÈGLE','DÉFINITION','FORMULE','THÉORÈME','EXCEPTION','CONCEPT'].map(t=>`<option>${t}</option>`).join('')}</select></div><div style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn" id="fc-export">Exporter</button></div></div>`;
-    const grid = `<div id="flashcards-grid" class="sheet-grid">${cards.map(c=>`<div class="card fc" data-theme="${_slug(c.theme)}" data-type="${c.type}"><div class="q"><span class="badge">${c.type}</span> ${esc(c.q)}</div><details class="a"><summary>Voir la réponse</summary><p>${esc(c.a)}</p></details><small class="muted">${esc(c.theme)}</small></div>`).join('')}</div>`;
+    const filters = `<div class="fc-toolbar"><strong>Filtres</strong><select id="fc-theme" class="input"><option value="">Tous les thèmes</option>${Object.keys(byTheme).map(t=>`<option>${esc(t)}</option>`).join('')}</select><select id="fc-type" class="input"><option value="">Tous les types</option>${['RÈGLE','DÉFINITION','FORMULE','THÉORÈME','EXCEPTION','CONCEPT'].map(t=>`<option>${t}</option>`).join('')}</select><button class="btn" id="fc-export">Exporter</button></div>`;
+    const grid = `<div id="flashcards-grid" class="fc-deck">${cards.map(c=>`<div class="flashcard" data-theme="${_slug(c.theme)}" data-type="${c.type}"><div class="fc-inner"><div class="fc-face fc-front"><span class="badge">${c.type}</span> ${esc(c.q)}</div><div class="fc-face fc-back">${esc(c.a)}</div></div><small class="muted">${esc(c.theme)}</small></div>`).join('')}</div>`;
     out.innerHTML = filters + grid;
+    Array.from(out.querySelectorAll('.fc-inner')).forEach(inner=>inner.addEventListener('click',()=>inner.classList.toggle('flip')));
     const themeSel = document.getElementById('fc-theme'); const typeSel=document.getElementById('fc-type');
-    function applyFilters(){ const t=themeSel && themeSel.value || ''; const ty=typeSel && typeSel.value || ''; Array.from(document.querySelectorAll('#flashcards-grid .fc')).forEach(card=>{ const okT = !t || card.getAttribute('data-theme')===_slug(t); const okTy=!ty || card.getAttribute('data-type')===ty; card.style.display = (okT && okTy)? '' : 'none'; }); }
+    function applyFilters(){ const t=themeSel && themeSel.value || ''; const ty=typeSel && typeSel.value || ''; Array.from(document.querySelectorAll('#flashcards-grid .flashcard')).forEach(card=>{ const okT = !t || card.getAttribute('data-theme')===_slug(t); const okTy=!ty || card.getAttribute('data-type')===ty; card.style.display = (okT && okTy)? '' : 'none'; }); }
     themeSel && themeSel.addEventListener('change', applyFilters); typeSel && typeSel.addEventListener('change', applyFilters);
-    const exportBtn = document.getElementById('fc-export'); exportBtn && exportBtn.addEventListener('click', ()=>{ const visible = Array.from(document.querySelectorAll('#flashcards-grid .fc')).filter(c=>c.style.display!== 'none'); const txt = visible.map(c=>`# ${c.getAttribute('data-type')}\nQ: ${c.querySelector('.q')?.innerText||''}\nA: ${c.querySelector('.a')?.innerText||''}\n`).join('\n'); const blob=new Blob([txt],{type:'text/plain'}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download='flashcards.txt'; a.click(); URL.revokeObjectURL(url); });
+    const exportBtn = document.getElementById('fc-export'); exportBtn && exportBtn.addEventListener('click', ()=>{ const visible = Array.from(document.querySelectorAll('#flashcards-grid .flashcard')).filter(c=>c.style.display!== 'none'); const txt = visible.map(c=>`# ${c.getAttribute('data-type')}\nQ: ${c.querySelector('.fc-front')?.innerText||''}\nA: ${c.querySelector('.fc-back')?.innerText||''}\n`).join('\n'); const blob=new Blob([txt],{type:'text/plain'}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download='flashcards.txt'; a.click(); URL.revokeObjectURL(url); });
   }
   async function updateSRS(txt, data){
     const out = document.getElementById('srs-output'); if(!out) return;
@@ -529,6 +536,7 @@
     try{ const html=document.documentElement; let saved=localStorage.getItem('selected-theme')||'theme-nour'; if(saved==='theme-light') saved='theme-nour'; html.classList.remove('theme-nour','theme-light','theme-studycave'); html.classList.add(saved); html.classList.add('theme-dark'); const sel=$('#theme-select'); if(sel){ sel.value=saved; on(sel,'change',e=>{ const v=e.target.value; html.classList.remove('theme-nour','theme-light','theme-studycave'); html.classList.add(v); html.classList.add('theme-dark'); localStorage.setItem('selected-theme', v); }); } }catch{}
     // Provider controls
     const prov=$('#aiProvider'); const key=$('#apiKey'); if(prov){ prov.value=store.provider; on(prov,'change', updateProviderStatus); } if(key){ key.value=store.apiKey; on(key,'change', updateProviderStatus); on(key,'input',()=>{ store.apiKey=key.value; updateProviderStatus(); }); }
+    document.addEventListener('keydown',e=>{ if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='o'){ if(prov) prov.value='offline'; store.provider='offline'; updateProviderStatus(); } if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='i'){ if(prov) prov.value='internal'; store.provider='internal'; updateProviderStatus(); } });
     updateProviderStatus();
     // Tabs
     wireTabs();
