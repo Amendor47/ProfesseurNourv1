@@ -1,5 +1,13 @@
 /* === script.clean.js (REPLACE) ===================================== */
-const CM = { meta:{title:"",lang:"fr"}, text:"", sections:[], conceptIndex:{}, qa:{ qcm:[], flashcards:[] } };
+const CM = {
+  meta:{title:"",lang:"fr"},
+  text:"",
+  sections:[],
+  conceptIndex:{},
+  qa:{ qcm:[], flashcards:[] },
+  sheets:[],
+  steps:[]
+};
 
 const $  = (sel, ctx=document) => ctx.querySelector(sel);
 const $$ = (sel, ctx=document) => Array.from(ctx.querySelectorAll(sel));
@@ -261,41 +269,59 @@ function mergeInternalOut(out){
   CM.qa.flashcards = dedupeCards(CM.qa.flashcards);
 }
 
+async function generateSheets(sections){
+  try{
+    const payload = { sections: sections.map(s=>({ title: s.title, content: s.raw })) };
+    const res = await fetch('/sheets', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(payload)
+    });
+    if(!res.ok) throw new Error('HTTP '+res.status);
+    const data = await res.json();
+    return data.sheets || [];
+  }catch(err){
+    console.error('generateSheets error', err);
+    return [];
+  }
+}
+
 function renderFiches(){
   const host = document.getElementById('sheet-output'); if(!host) return;
+  const fiches = CM.sheets.length ? CM.sheets : CM.sections.map(s=>({
+    title:s.title,
+    short_version:{content:[s.summary.short]},
+    medium_version:{content:[s.summary.medium]},
+    long_version:{content:s.summary.long}
+  }));
   host.innerHTML='';
-  let i=0; const batch=4;
-  function step(){
-    const frag=document.createDocumentFragment();
-    for(let end=Math.min(i+batch, CM.sections.length); i<end; i++){
-      const s=CM.sections[i]; const idx=i;
-      const temp=document.createElement('div');
-      temp.innerHTML=`
-        <article class="fiche" data-i="${idx}">
-          <h3>${s.title}</h3>
-          <div class="view-toggle">
-            <button data-view="short">Courte</button>
-            <button data-view="medium">Moyenne</button>
-            <button data-view="long">Longue</button>
-            <button data-view="html" class="active">Structurée</button>
-          </div>
-          <div class="fiche-content">${s.summary.html}</div>
-        </article>`;
-      const card=temp.firstElementChild;
-      const content=card.querySelector('.fiche-content');
-      card.querySelectorAll('button').forEach(btn=>{
-        btn.addEventListener('click',()=>{
-          const v=btn.dataset.view;
-          card.querySelectorAll('button').forEach(b=>b.classList.toggle('active',b===btn));
-          content.innerHTML = (v==='html') ? CM.sections[idx].summary.html : CM.sections[idx].summary[v];
-        });
+  fiches.forEach((s,idx)=>{
+    const shortHTML = `<ul>${(s.short_version.content||[]).map(li=>`<li>${li}</li>`).join('')}</ul>`;
+    const mediumHTML = (s.medium_version.content||[]).map(p=>`<p>${p}</p>`).join('');
+    const longHTML = `<p>${(s.long_version.content||'').replace(/\n\n+/g,'</p><p>').replace(/\n/g,'<br>')}</p>`;
+    const temp=document.createElement('div');
+    temp.innerHTML=`
+      <article class="fiche" data-i="${idx}">
+        <h3>${s.title}</h3>
+        <div class="view-toggle">
+          <button data-view="short">Courte</button>
+          <button data-view="medium">Moyenne</button>
+          <button data-view="long" class="active">Longue</button>
+        </div>
+        <div class="fiche-content">${longHTML}</div>
+      </article>`;
+    const card=temp.firstElementChild;
+    const content=card.querySelector('.fiche-content');
+    const views={short:shortHTML, medium:mediumHTML, long:longHTML};
+    card.querySelectorAll('button').forEach(btn=>{
+      btn.addEventListener('click',()=>{
+        const v=btn.dataset.view;
+        card.querySelectorAll('button').forEach(b=>b.classList.toggle('active',b===btn));
+        content.innerHTML = views[v];
       });
-      frag.appendChild(card);
-    }
-    host.appendChild(frag);
-    if(i<CM.sections.length) requestAnimationFrame(step);
-  }
-  requestAnimationFrame(step);
+    });
+    host.appendChild(card);
+  });
 }
 
 function renderQCM(){
@@ -351,19 +377,14 @@ function renderFlashcards(){
         <div class="flashcard" data-i="${i}">
           <div class="flashcard-inner">
             <div class="flashcard-front">${fc.q}</div>
-            <div class="flashcard-back hidden">${fc.a}</div>
+            <div class="flashcard-back">${fc.a}</div>
           </div>
           <button class="flip-btn">↺ Retourner</button>
         </div>`;
       const card=temp.firstElementChild;
-      const inner = card.querySelector('.flashcard-inner');
-      const front = card.querySelector('.flashcard-front');
-      const back  = card.querySelector('.flashcard-back');
       const flipBtn = card.querySelector('.flip-btn');
       flipBtn.addEventListener('click',()=>{
-        inner.classList.toggle('flipped');
-        front.classList.toggle('hidden');
-        back.classList.toggle('hidden');
+        card.classList.toggle('flipped');
       });
       frag.appendChild(card);
     }
@@ -447,6 +468,43 @@ async function runUnifiedPipeline(text, mode='offline'){
     });
   }
 
+  function initFileUpload(){
+    const dropzone = $('#dropzone');
+    const fileInput = $('#fileInput');
+    const textInput = $('#textInput');
+    if(!dropzone || !fileInput || !textInput) return;
+    dropzone.addEventListener('click',()=>fileInput.click());
+    dropzone.addEventListener('dragover',e=>{ e.preventDefault(); dropzone.classList.add('dragover'); });
+    dropzone.addEventListener('dragleave',()=>dropzone.classList.remove('dragover'));
+    dropzone.addEventListener('drop',e=>{
+      e.preventDefault();
+      dropzone.classList.remove('dragover');
+      if(e.dataTransfer.files.length>0) handleFile(e.dataTransfer.files[0], textInput);
+    });
+    fileInput.addEventListener('change',e=>{ if(e.target.files.length>0) handleFile(e.target.files[0], textInput); });
+  }
+
+  async function handleFile(file, textInput){
+    try{
+      const reader=new FileReader();
+      if(file.name.endsWith('.txt') || file.name.endsWith('.md')){
+        reader.onload=()=> textInput.value=reader.result;
+        reader.readAsText(file);
+      }else if(file.name.endsWith('.docx')){
+        reader.onload=async()=>{
+          const result = await mammoth.extractRawText({arrayBuffer:reader.result});
+          textInput.value = result.value;
+        };
+        reader.readAsArrayBuffer(file);
+      }else{
+        alert('Format non supporté : utilisez .txt, .md ou .docx');
+      }
+    }catch(err){
+      console.error('Erreur lors du traitement du fichier', err);
+      alert("Impossible de lire le fichier.");
+    }
+  }
+
   function wireSettings(){
     ensureSettingsModal();
     const btn = document.querySelector('#settingsBtn, [data-role="settings"], #gearBtn, .settings-btn');
@@ -470,6 +528,7 @@ async function runUnifiedPipeline(text, mode='offline'){
 
       try{
         await runUnifiedPipeline(text,'offline');
+        CM.sheets = await generateSheets(CM.sections);
         renderFiches(); renderQCM(); renderFlashcards();
         unlockTabs();
       }catch(err){
@@ -479,10 +538,112 @@ async function runUnifiedPipeline(text, mode='offline'){
     });
   }
 
+  function initGuidedReading(){
+    const btnGen = $('#gr-generate');
+    const btnStart = $('#gr-start');
+    const btnNext = $('#gr-next');
+    const btnPrev = $('#gr-prev');
+    const btnExport = $('#gr-export');
+    const stepper = $('#gr-stepper');
+    const progress = $('#gr-progressbar .bar');
+    const titleEl = $('#gr-section-title');
+    const shortEl = $('#gr-content-short');
+    const medEl = $('#gr-content-medium');
+    const longEl = $('#gr-content-long');
+    const qqList = $('#gr-qq-list');
+    const qqFeedback = $('#gr-qq-feedback');
+    const qqBlock = $('#gr-quick-quiz');
+    const caseBody = $('#gr-case-body');
+    const caseBlock = $('#gr-case');
+    const viewBtns = Array.from($('#gr-reading-pane .view-toggle')?.querySelectorAll('button')||[]);
+    viewBtns.forEach(btn=>{
+      btn.addEventListener('click',()=>{
+        viewBtns.forEach(b=>b.classList.remove('selected'));
+        btn.classList.add('selected');
+        ['short','medium','long'].forEach(v=>{
+          const el = $('#gr-content-'+v);
+          if(el) el.classList.toggle('hidden', v!==btn.dataset.view);
+        });
+      });
+    });
+
+    let idx = 0;
+
+    const pHtml = txt=>`<p>${(txt||'').replace(/\n\n+/g,'</p><p>').replace(/\n/g,'<br>')}</p>`;
+
+    function buildSteps(){
+      CM.steps = CM.sections.map((sec,i)=>({
+        title: sec.title,
+        short: sec.summary.short,
+        medium: sec.summary.medium,
+        long: sec.summary.long,
+        qcm: CM.qa.qcm[i] || null,
+        card: CM.qa.flashcards[i] || null
+      }));
+      stepper.textContent = CM.steps.length ? `${CM.steps.length} étapes prêtes` : '';
+    }
+
+    function renderStep(){
+      const st = CM.steps[idx];
+      if(!st) return;
+      titleEl.textContent = st.title;
+      shortEl.innerHTML = pHtml(st.short);
+      medEl.innerHTML = pHtml(st.medium);
+      longEl.innerHTML = pHtml(st.long);
+
+      if(st.qcm){
+        qqList.innerHTML = st.qcm.options.map((o,oidx)=>`<label><input type="radio" name="gr-qq" value="${oidx}"> ${o}</label>`).join('');
+        qqFeedback.classList.add('hidden');
+        const correctIndex = st.qcm.options.indexOf(st.qcm.answer);
+        qqList.querySelectorAll('label').forEach((lab,lidx)=>{
+          lab.addEventListener('click',()=>{
+            qqList.querySelectorAll('label').forEach(l=>l.classList.remove('qq-correct','qq-wrong'));
+            lab.classList.add(lidx===correctIndex?'qq-correct':'qq-wrong');
+            qqFeedback.classList.remove('hidden');
+            qqFeedback.textContent = lidx===correctIndex ? 'Bravo !' : `À revoir : ${st.qcm.answer}`;
+          });
+        });
+        qqBlock.classList.remove('hidden');
+      }else{
+        qqList.innerHTML='';
+        qqFeedback.classList.add('hidden');
+        qqBlock.classList.add('hidden');
+      }
+
+      if(st.card){
+        caseBody.innerHTML = `<p><strong>${st.card.q}</strong></p><p>${st.card.a}</p>`;
+        caseBlock.classList.remove('hidden');
+      }else{
+        caseBody.innerHTML='';
+        caseBlock.classList.add('hidden');
+      }
+
+      progress.style.width = ((idx+1)/CM.steps.length*100)+'%';
+      stepper.textContent = `Étape ${idx+1}/${CM.steps.length}`;
+      btnPrev.disabled = idx===0;
+      btnNext.disabled = idx>=CM.steps.length-1;
+    }
+
+    btnGen?.addEventListener('click',()=>{ buildSteps(); btnStart.disabled = !CM.steps.length; });
+    btnStart?.addEventListener('click',()=>{ if(!CM.steps.length) buildSteps(); idx=0; renderStep(); });
+    btnNext?.addEventListener('click',()=>{ if(idx<CM.steps.length-1){ idx++; renderStep(); }});
+    btnPrev?.addEventListener('click',()=>{ if(idx>0){ idx--; renderStep(); }});
+    btnExport?.addEventListener('click',()=>{
+      const content = CM.steps.map(s=>`# ${s.title}\n\n${s.long}`).join('\n\n');
+      const blob = new Blob([content],{type:'text/plain'});
+      const url = URL.createObjectURL(blob);
+      const a=document.createElement('a');
+      a.href=url; a.download='synthese.txt'; a.click();
+      setTimeout(()=>URL.revokeObjectURL(url),1000);
+    });
+  }
+
   document.addEventListener('DOMContentLoaded', ()=>{
     initTabs();
+    initFileUpload();
     wireSettings();
     wireAnalyze();
+    initGuidedReading();
   });
 })();
 /* === end script.clean.js =========================================== */
