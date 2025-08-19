@@ -250,7 +250,9 @@ async function generateSheets(){
       method:'POST', headers:{'Content-Type':'application/json'},
       body: JSON.stringify(body)
     });
-    const data = await res.json();
+    if(!res.ok) throw new Error('HTTP '+res.status);
+    let data={};
+    try{ data = await res.json(); }catch{}
     CM.sheets = Array.isArray(data?.sheets) ? data.sheets : [];
   }catch(e){
     console.error('generateSheets failed',e);
@@ -295,9 +297,12 @@ function renderFiches(){
     const frag=document.createDocumentFragment();
     for(let end=Math.min(i+batch, sheets.length); i<end; i++){
       const s=sheets[i];
-      const shortHtml = `<ul>${(s.short_version?.content||[]).map(x=>`<li>${x}</li>`).join('')}</ul>`;
-      const mediumHtml = (s.medium_version?.content||[]).map(p=>`<p>${p}</p>`).join('');
-      const longHtml = `<p>${s.long_version?.content||''}</p>`;
+      const shortC = s.short_version?.content;
+      const shortHtml = `<ul>${(Array.isArray(shortC)?shortC:[shortC||'']).filter(Boolean).map(x=>`<li>${x}</li>`).join('')}</ul>`;
+      const medC = s.medium_version?.content;
+      const mediumHtml = (Array.isArray(medC)?medC:[medC||'']).map(p=>`<p>${p}</p>`).join('');
+      const longC = s.long_version?.content;
+      const longHtml = Array.isArray(longC)? longC.map(p=>`<p>${p}</p>`).join('') : `<p>${longC||''}</p>`;
       const temp=document.createElement('div');
       temp.innerHTML=`
         <article class="fiche" data-i="${i}">
@@ -444,8 +449,14 @@ async function handleFile(file, textInput){
       reader.readAsText(file);
     }else if(file.name.endsWith('.docx')){
       reader.onload=async()=>{
-        const result = await mammoth.extractRawText({ arrayBuffer: reader.result });
-        textInput.value = result.value;
+        try{
+          await ensureMammoth();
+          const result = await mammoth.extractRawText({ arrayBuffer: reader.result });
+          textInput.value = result.value;
+        }catch(e){
+          console.error('mammoth failed', e);
+          alert('Impossible de lire ce DOCX');
+        }
       };
       reader.readAsArrayBuffer(file);
     }else{
@@ -455,6 +466,17 @@ async function handleFile(file, textInput){
     console.error('Erreur lors du traitement du fichier', err);
     alert('Impossible de lire le fichier.');
   }
+}
+
+async function ensureMammoth(){
+  if(typeof mammoth !== 'undefined') return;
+  await new Promise((resolve, reject)=>{
+    const s=document.createElement('script');
+    s.src='https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.4.21/mammoth.browser.min.js';
+    s.onload=()=>resolve();
+    s.onerror=()=>reject(new Error('mammoth load error'));
+    document.head.appendChild(s);
+  });
 }
 
 function initGuidedReading(){
