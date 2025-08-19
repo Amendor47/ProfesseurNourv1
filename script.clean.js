@@ -1,5 +1,5 @@
 /* === script.clean.js (REPLACE) ===================================== */
-const CM = { meta:{title:"",lang:"fr"}, text:"", sections:[], conceptIndex:{}, qa:{ qcm:[], flashcards:[] } };
+const CM = { meta:{title:"",lang:"fr"}, text:"", sections:[], sheets:[], conceptIndex:{}, qa:{ qcm:[], flashcards:[] } };
 
 const $  = (sel, ctx=document) => ctx.querySelector(sel);
 const $$ = (sel, ctx=document) => Array.from(ctx.querySelectorAll(sel));
@@ -241,6 +241,25 @@ async function buildFlashcards(){
   CM.qa.flashcards = dedupeCards(cards).slice(0, 120);
 }
 
+async function generateSheets(){
+  try{
+    const body = {
+      sections: CM.sections.map(s=>({ title: s.title, content: s.raw }))
+    };
+    const res = await fetch('/sheets',{
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(body)
+    });
+    if(!res.ok) throw new Error('HTTP '+res.status);
+    let data={};
+    try{ data = await res.json(); }catch{}
+    CM.sheets = Array.isArray(data?.sheets) ? data.sheets : [];
+  }catch(e){
+    console.error('generateSheets failed',e);
+    CM.sheets = [];
+  }
+}
+
 function mergeInternalOut(out){
   if(!out) return;
   if(Array.isArray(out.sections)){
@@ -264,36 +283,51 @@ function mergeInternalOut(out){
 function renderFiches(){
   const host = document.getElementById('sheet-output'); if(!host) return;
   host.innerHTML='';
+  let sheets = CM.sheets || [];
+  if(!sheets.length){
+    sheets = CM.sections.map(sec=>({
+      title: sec.title,
+      short_version:{content:(sec.summary?.short? sec.summary.short.split(/\.\s*/).filter(Boolean):[])},
+      medium_version:{content:[sec.summary?.medium||'']},
+      long_version:{content:sec.summary?.long || sec.summary?.html || ''}
+    }));
+  }
   let i=0; const batch=4;
   function step(){
     const frag=document.createDocumentFragment();
-    for(let end=Math.min(i+batch, CM.sections.length); i<end; i++){
-      const s=CM.sections[i]; const idx=i;
+    for(let end=Math.min(i+batch, sheets.length); i<end; i++){
+      const s=sheets[i];
+      const shortC = s.short_version?.content;
+      const shortHtml = `<ul>${(Array.isArray(shortC)?shortC:[shortC||'']).filter(Boolean).map(x=>`<li>${x}</li>`).join('')}</ul>`;
+      const medC = s.medium_version?.content;
+      const mediumHtml = (Array.isArray(medC)?medC:[medC||'']).map(p=>`<p>${p}</p>`).join('');
+      const longC = s.long_version?.content;
+      const longHtml = Array.isArray(longC)? longC.map(p=>`<p>${p}</p>`).join('') : `<p>${longC||''}</p>`;
       const temp=document.createElement('div');
       temp.innerHTML=`
-        <article class="fiche" data-i="${idx}">
+        <article class="fiche" data-i="${i}">
           <h3>${s.title}</h3>
           <div class="view-toggle">
             <button data-view="short">Courte</button>
             <button data-view="medium">Moyenne</button>
-            <button data-view="long">Longue</button>
-            <button data-view="html" class="active">Structurée</button>
+            <button data-view="long" class="active">Longue</button>
           </div>
-          <div class="fiche-content">${s.summary.html}</div>
+          <div class="fiche-content">${longHtml}</div>
         </article>`;
       const card=temp.firstElementChild;
       const content=card.querySelector('.fiche-content');
+      const views={short:shortHtml, medium:mediumHtml, long:longHtml};
       card.querySelectorAll('button').forEach(btn=>{
         btn.addEventListener('click',()=>{
           const v=btn.dataset.view;
           card.querySelectorAll('button').forEach(b=>b.classList.toggle('active',b===btn));
-          content.innerHTML = (v==='html') ? CM.sections[idx].summary.html : CM.sections[idx].summary[v];
+          content.innerHTML = views[v];
         });
       });
       frag.appendChild(card);
     }
     host.appendChild(frag);
-    if(i<CM.sections.length) requestAnimationFrame(step);
+    if(i<sheets.length) requestAnimationFrame(step);
   }
   requestAnimationFrame(step);
 }
@@ -351,19 +385,14 @@ function renderFlashcards(){
         <div class="flashcard" data-i="${i}">
           <div class="flashcard-inner">
             <div class="flashcard-front">${fc.q}</div>
-            <div class="flashcard-back hidden">${fc.a}</div>
+            <div class="flashcard-back">${fc.a}</div>
           </div>
           <button class="flip-btn">↺ Retourner</button>
         </div>`;
       const card=temp.firstElementChild;
-      const inner = card.querySelector('.flashcard-inner');
-      const front = card.querySelector('.flashcard-front');
-      const back  = card.querySelector('.flashcard-back');
       const flipBtn = card.querySelector('.flip-btn');
       flipBtn.addEventListener('click',()=>{
-        inner.classList.toggle('flipped');
-        front.classList.toggle('hidden');
-        back.classList.toggle('hidden');
+        card.classList.toggle('flipped');
       });
       frag.appendChild(card);
     }
@@ -393,6 +422,181 @@ async function runUnifiedPipeline(text, mode='offline'){
     const out = await tryInternal(text);
     if(out) mergeInternalOut(out);
   }
+}
+
+function initFileUpload(){
+  const dropzone = document.getElementById('dropzone');
+  const fileInput = document.getElementById('fileInput');
+  const textInput = document.getElementById('textInput');
+  if(!dropzone || !fileInput || !textInput) return;
+  dropzone.addEventListener('click',()=>fileInput.click());
+  dropzone.addEventListener('dragover',e=>{ e.preventDefault(); dropzone.classList.add('dragover'); });
+  dropzone.addEventListener('dragleave',()=>dropzone.classList.remove('dragover'));
+  dropzone.addEventListener('drop',e=>{
+    e.preventDefault(); dropzone.classList.remove('dragover');
+    if(e.dataTransfer.files.length>0){ handleFile(e.dataTransfer.files[0], textInput); }
+  });
+  fileInput.addEventListener('change',e=>{
+    if(e.target.files.length>0){ handleFile(e.target.files[0], textInput); }
+  });
+}
+
+async function handleFile(file, textInput){
+  try{
+    const reader = new FileReader();
+    if(file.name.endsWith('.txt') || file.name.endsWith('.md')){
+      reader.onload=()=> textInput.value = reader.result;
+      reader.readAsText(file);
+    }else if(file.name.endsWith('.docx')){
+      reader.onload=async()=>{
+        try{
+          await ensureMammoth();
+          const result = await mammoth.extractRawText({ arrayBuffer: reader.result });
+          textInput.value = result.value;
+        }catch(e){
+          console.error('mammoth failed', e);
+          alert('Impossible de lire ce DOCX');
+        }
+      };
+      reader.readAsArrayBuffer(file);
+    }else{
+      alert('Format non supporté : utilisez .txt, .md ou .docx');
+    }
+  }catch(err){
+    console.error('Erreur lors du traitement du fichier', err);
+    alert('Impossible de lire le fichier.');
+  }
+}
+
+async function ensureMammoth(){
+  if(typeof mammoth !== 'undefined') return;
+  await new Promise((resolve, reject)=>{
+    const s=document.createElement('script');
+    s.src='https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.4.21/mammoth.browser.min.js';
+    s.onload=()=>resolve();
+    s.onerror=()=>reject(new Error('mammoth load error'));
+    document.head.appendChild(s);
+  });
+}
+
+function initGuidedReading(){
+  const btnGen = document.getElementById('gr-generate');
+  const btnStart = document.getElementById('gr-start');
+  const btnNext = document.getElementById('gr-next');
+  const btnPrev = document.getElementById('gr-prev');
+  const btnExport = document.getElementById('gr-export');
+  const stepper = document.getElementById('gr-stepper');
+  const progressBar = document.querySelector('#gr-progressbar .bar');
+  const pane = document.getElementById('gr-reading-pane');
+  const titleEl = document.getElementById('gr-section-title');
+  const shortEl = document.getElementById('gr-content-short');
+  const medEl = document.getElementById('gr-content-medium');
+  const longEl = document.getElementById('gr-content-long');
+  const viewBtns = pane ? pane.querySelectorAll('.view-toggle button') : [];
+  const qqSection = document.getElementById('gr-quick-quiz');
+  const qqList = document.getElementById('gr-qq-list');
+  const qqFb = document.getElementById('gr-qq-feedback');
+  const caseSection = document.getElementById('gr-case');
+  const caseBody = document.getElementById('gr-case-body');
+
+  let steps = [];
+  let idx = 0;
+
+  function compose(){
+    steps = [];
+    const sheets = CM.sheets && CM.sheets.length ? CM.sheets : CM.sections.map(sec=>({
+      title: sec.title,
+      short_version:{content:(sec.summary?.short? sec.summary.short.split(/\.\s*/).filter(Boolean):[])},
+      medium_version:{content:[sec.summary?.medium||'']},
+      long_version:{content:sec.summary?.long || sec.summary?.html || ''}
+    }));
+    sheets.forEach(s=>{
+      steps.push({type:'section', sheet:s});
+    });
+    CM.qa.qcm.forEach(q=>steps.push({type:'qcm', q}));
+    CM.qa.flashcards.forEach(fc=>steps.push({type:'flashcard', fc}));
+    idx = 0;
+    stepper.textContent = `${steps.length} étapes prêtes`;
+    progressBar.style.width = '0%';
+    btnNext.disabled = true;
+    btnPrev.disabled = true;
+  }
+
+  function updateView(view){
+    shortEl.classList.add('hidden');
+    medEl.classList.add('hidden');
+    longEl.classList.add('hidden');
+    if(view==='short') shortEl.classList.remove('hidden');
+    else if(view==='medium') medEl.classList.remove('hidden');
+    else longEl.classList.remove('hidden');
+  }
+
+  viewBtns.forEach(btn=>{
+    btn.addEventListener('click',()=>{
+      viewBtns.forEach(b=>b.classList.toggle('selected',b===btn));
+      updateView(btn.dataset.view);
+    });
+  });
+
+  function render(){
+    const step = steps[idx]; if(!step) return;
+    stepper.textContent = `Étape ${idx+1} / ${steps.length}`;
+    progressBar.style.width = `${((idx+1)/Math.max(1,steps.length))*100}%`;
+    btnPrev.disabled = idx===0;
+    btnNext.disabled = idx>=steps.length-1;
+
+    qqSection.classList.add('hidden');
+    caseSection.classList.add('hidden');
+    qqFb.classList.add('hidden');
+    qqList.innerHTML='';
+    caseBody.innerHTML='';
+
+    if(step.type==='section'){
+      const s = step.sheet;
+      titleEl.textContent = s.title;
+      shortEl.innerHTML = `<ul>${(s.short_version?.content||[]).map(x=>`<li>${x}</li>`).join('')}</ul>`;
+      medEl.innerHTML = (s.medium_version?.content||[]).map(p=>`<p>${p}</p>`).join('');
+      longEl.innerHTML = `<p>${s.long_version?.content||''}</p>`;
+      updateView('long');
+      viewBtns.forEach(b=>b.classList.toggle('selected', b.dataset.view==='long'));
+    }else if(step.type==='qcm'){
+      const q = step.q;
+      titleEl.textContent = 'Question';
+      qqSection.classList.remove('hidden');
+      qqList.innerHTML = q.options.map((opt,i)=>`<label><input type="radio" name="gr-q-${idx}" value="${i}"> ${opt}</label>`).join('');
+      const correctIndex = q.options.indexOf(q.answer);
+      qqList.querySelectorAll('label').forEach((lab,i)=>{
+        lab.addEventListener('click',()=>{
+          qqList.querySelectorAll('label').forEach(l=>l.classList.remove('qq-correct','qq-wrong'));
+          lab.classList.add(i===correctIndex? 'qq-correct':'qq-wrong');
+          qqFb.textContent = i===correctIndex ? 'Bravo !' : `Réponse : ${q.answer}`;
+          qqFb.classList.remove('hidden');
+        });
+      });
+      updateView('long');
+      viewBtns.forEach(b=>b.classList.remove('selected'));
+    }else if(step.type==='flashcard'){
+      const fc = step.fc;
+      titleEl.textContent = 'Flashcard';
+      caseSection.classList.remove('hidden');
+      caseBody.innerHTML = `<div class="flashcard"><div class="flashcard-front">${fc.q}</div><div class="flashcard-back">${fc.a}</div><button class="flip-btn">↺</button></div>`;
+      const card = caseBody.querySelector('.flashcard');
+      caseBody.querySelector('.flip-btn').addEventListener('click',()=>card.classList.toggle('flipped'));
+      updateView('long');
+      viewBtns.forEach(b=>b.classList.remove('selected'));
+    }
+  }
+
+  btnGen?.addEventListener('click',compose);
+  btnStart?.addEventListener('click',()=>{ if(!steps.length) compose(); render(); });
+  btnNext?.addEventListener('click',()=>{ if(idx<steps.length-1){ idx++; render(); }});
+  btnPrev?.addEventListener('click',()=>{ if(idx>0){ idx--; render(); }});
+  btnExport?.addEventListener('click',()=>{
+    const blob = new Blob([JSON.stringify(steps,null,2)],{type:'application/json'});
+    const url = URL.createObjectURL(blob);
+    const a=document.createElement('a'); a.href=url; a.download='parcours.json'; a.click();
+    setTimeout(()=>URL.revokeObjectURL(url),1000);
+  });
 }
 
 /* === Bootstrap UI === */
@@ -470,6 +674,7 @@ async function runUnifiedPipeline(text, mode='offline'){
 
       try{
         await runUnifiedPipeline(text,'offline');
+        await generateSheets();
         renderFiches(); renderQCM(); renderFlashcards();
         unlockTabs();
       }catch(err){
@@ -483,6 +688,8 @@ async function runUnifiedPipeline(text, mode='offline'){
     initTabs();
     wireSettings();
     wireAnalyze();
+    initFileUpload();
+    initGuidedReading();
   });
 })();
 /* === end script.clean.js =========================================== */
