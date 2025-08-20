@@ -241,6 +241,27 @@ async function buildFlashcards(){
   CM.qa.flashcards = dedupeCards(cards).slice(0, 120);
 }
 
+async function generateSheets(sections){
+  try{
+    const payload = { sections: sections.map(s=>({ title:s.title, raw:s.raw })) };
+    const res = await fetch('/sheets',{
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(payload)
+    });
+    if(!res.ok) throw new Error('HTTP '+res.status);
+    const data = await res.json();
+    if(Array.isArray(data.sections)){
+      data.sections.forEach((ext,idx)=>{
+        const sec = sections[idx]; if(!sec) return;
+        sec.summary = sec.summary || {};
+        sec.summary.short  = ext.short_version  || sec.summary.short;
+        sec.summary.medium = ext.medium_version || sec.summary.medium;
+        sec.summary.long   = ext.long_version   || sec.summary.long;
+      });
+    }
+  }catch(err){ console.error('generateSheets error:', err); }
+}
+
 function mergeInternalOut(out){
   if(!out) return;
   if(Array.isArray(out.sections)){
@@ -276,10 +297,9 @@ function renderFiches(){
           <div class="view-toggle">
             <button data-view="short">Courte</button>
             <button data-view="medium">Moyenne</button>
-            <button data-view="long">Longue</button>
-            <button data-view="html" class="active">Structurée</button>
+            <button data-view="long" class="active">Longue</button>
           </div>
-          <div class="fiche-content">${s.summary.html}</div>
+          <div class="fiche-content">${s.summary.long || ''}</div>
         </article>`;
       const card=temp.firstElementChild;
       const content=card.querySelector('.fiche-content');
@@ -287,7 +307,7 @@ function renderFiches(){
         btn.addEventListener('click',()=>{
           const v=btn.dataset.view;
           card.querySelectorAll('button').forEach(b=>b.classList.toggle('active',b===btn));
-          content.innerHTML = (v==='html') ? CM.sections[idx].summary.html : CM.sections[idx].summary[v];
+          content.textContent = CM.sections[idx].summary[v] || '';
         });
       });
       frag.appendChild(card);
@@ -351,19 +371,14 @@ function renderFlashcards(){
         <div class="flashcard" data-i="${i}">
           <div class="flashcard-inner">
             <div class="flashcard-front">${fc.q}</div>
-            <div class="flashcard-back hidden">${fc.a}</div>
+            <div class="flashcard-back">${fc.a}</div>
           </div>
           <button class="flip-btn">↺ Retourner</button>
         </div>`;
       const card=temp.firstElementChild;
-      const inner = card.querySelector('.flashcard-inner');
-      const front = card.querySelector('.flashcard-front');
-      const back  = card.querySelector('.flashcard-back');
       const flipBtn = card.querySelector('.flip-btn');
       flipBtn.addEventListener('click',()=>{
-        inner.classList.toggle('flipped');
-        front.classList.toggle('hidden');
-        back.classList.toggle('hidden');
+        card.classList.toggle('flipped');
       });
       frag.appendChild(card);
     }
@@ -371,6 +386,121 @@ function renderFlashcards(){
     if(i<CM.qa.flashcards.length) requestAnimationFrame(step);
   }
   requestAnimationFrame(step);
+}
+
+function initFileUpload(){
+  const dropzone = document.getElementById('dropzone');
+  const fileInput = document.getElementById('fileInput');
+  const textInput = document.getElementById('textInput');
+  if(!dropzone || !fileInput || !textInput) return;
+  dropzone.addEventListener('click', ()=>fileInput.click());
+  dropzone.addEventListener('dragover', e=>{ e.preventDefault(); dropzone.classList.add('dragover'); });
+  dropzone.addEventListener('dragleave', ()=>dropzone.classList.remove('dragover'));
+  dropzone.addEventListener('drop', e=>{
+    e.preventDefault(); dropzone.classList.remove('dragover');
+    if(e.dataTransfer.files.length>0) handleFile(e.dataTransfer.files[0], textInput);
+  });
+  fileInput.addEventListener('change', e=>{
+    if(e.target.files.length>0) handleFile(e.target.files[0], textInput);
+  });
+}
+
+async function handleFile(file, textInput){
+  try{
+    const reader = new FileReader();
+    if(file.name.endsWith('.txt') || file.name.endsWith('.md')){
+      reader.onload = ()=> (textInput.value = reader.result);
+      reader.readAsText(file);
+    }else if(file.name.endsWith('.docx')){
+      reader.onload = async ()=>{
+        const result = await mammoth.extractRawText({ arrayBuffer: reader.result });
+        textInput.value = result.value;
+      };
+      reader.readAsArrayBuffer(file);
+    }else{
+      alert('Format non supporté : utilisez .txt, .md ou .docx');
+    }
+  }catch(err){
+    console.error('Erreur lors du traitement du fichier', err);
+    alert('Impossible de lire le fichier.');
+  }
+}
+
+function initGuidedReading(){
+  const btnGen = document.getElementById('gr-generate');
+  const btnStart = document.getElementById('gr-start');
+  const btnNext = document.getElementById('gr-next');
+  const btnPrev = document.getElementById('gr-prev');
+  const btnExport = document.getElementById('gr-export');
+  const stepper = document.getElementById('gr-stepper');
+  const progress = document.getElementById('gr-progressbar')?.querySelector('.bar');
+  const titleEl = document.getElementById('gr-section-title');
+  const shortEl = document.getElementById('gr-content-short');
+  const medEl = document.getElementById('gr-content-medium');
+  const longEl = document.getElementById('gr-content-long');
+  const qqList = document.getElementById('gr-qq-list');
+  const qqFb = document.getElementById('gr-qq-feedback');
+  const viewBtns = Array.from(document.querySelectorAll('#gr-reading-pane .view-toggle button'));
+  let current=0;
+
+  function buildSteps(){
+    CM.steps = CM.sections.map(sec=>{
+      const q = CM.qa.qcm.find(x=>x.stem.includes(sec.title)) || null;
+      return { sec, q };
+    });
+  }
+
+  function updateView(v){
+    ['short','medium','long'].forEach(key=>{
+      const el = document.getElementById('gr-content-'+key);
+      if(el) el.classList.toggle('hidden', key!==v);
+    });
+    viewBtns.forEach(b=>b.classList.toggle('selected', b.dataset.view===v));
+  }
+
+  viewBtns.forEach(btn=>{
+    btn.addEventListener('click',()=>updateView(btn.dataset.view));
+  });
+
+  function showStep(idx){
+    const step = CM.steps[idx]; if(!step) return; current=idx;
+    titleEl.textContent = step.sec.title;
+    shortEl.textContent = step.sec.summary?.short || '';
+    medEl.textContent = step.sec.summary?.medium || '';
+    longEl.textContent = step.sec.summary?.long || step.sec.raw;
+    updateView(viewBtns.find(b=>b.classList.contains('selected'))?.dataset.view || 'short');
+    qqList.innerHTML=''; qqFb.classList.add('hidden'); qqFb.textContent='';
+    if(step.q){
+      step.q.options.forEach((opt,oidx)=>{
+        const lab=document.createElement('label');
+        lab.innerHTML=`<input type="radio" name="gr-qq" value="${oidx}"> ${opt}`;
+        lab.addEventListener('click',()=>{
+          const correct=step.q.options.indexOf(step.q.answer);
+          qqList.querySelectorAll('label').forEach(l=>l.classList.remove('qq-correct','qq-wrong'));
+          lab.classList.add(oidx===correct?'qq-correct':'qq-wrong');
+          qqFb.classList.remove('hidden');
+          qqFb.textContent = oidx===correct ? 'Bravo !' : `À revoir : ${step.q.answer}`;
+        });
+        qqList.appendChild(lab);
+      });
+    }
+    stepper.textContent = `Étape ${idx+1} / ${CM.steps.length}`;
+    if(progress) progress.style.width = `${((idx+1)/CM.steps.length)*100}%`;
+    btnPrev.disabled = idx===0;
+    btnNext.disabled = idx>=CM.steps.length-1;
+  }
+
+  btnGen?.addEventListener('click',()=>{ buildSteps(); alert('Parcours généré'); });
+  btnStart?.addEventListener('click',()=>{ if(!CM.steps?.length) buildSteps(); showStep(0); });
+  btnNext?.addEventListener('click',()=>{ if(current<CM.steps.length-1) showStep(current+1); });
+  btnPrev?.addEventListener('click',()=>{ if(current>0) showStep(current-1); });
+  btnExport?.addEventListener('click',()=>{
+    const content = CM.sections.map(s=>s.summary?.long || '').join('\n\n');
+    const blob = new Blob([content],{type:'text/plain'});
+    const a=document.createElement('a');
+    a.href=URL.createObjectURL(blob); a.download='parcours.txt'; a.click();
+    URL.revokeObjectURL(a.href);
+  });
 }
 
 const CONFIG = { INTERNAL_TIMEOUT: 1800, MAX_CHARS: 12000 };
@@ -386,6 +516,7 @@ async function tryInternal(text){
 }
 async function runUnifiedPipeline(text, mode='offline'){
   await buildModelFromText(text);
+  await generateSheets(CM.sections);
   await indexConcepts();
   await buildQCM();
   await buildFlashcards();
@@ -483,6 +614,8 @@ async function runUnifiedPipeline(text, mode='offline'){
     initTabs();
     wireSettings();
     wireAnalyze();
+    initFileUpload();
+    initGuidedReading();
   });
 })();
 /* === end script.clean.js =========================================== */
