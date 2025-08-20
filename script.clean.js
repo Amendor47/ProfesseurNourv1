@@ -4,6 +4,70 @@ const CM = { meta:{title:"",lang:"fr"}, text:"", sections:[], conceptIndex:{}, q
 const $  = (sel, ctx=document) => ctx.querySelector(sel);
 const $$ = (sel, ctx=document) => Array.from(ctx.querySelectorAll(sel));
 
+function initFileUpload() {
+  const dropzone = document.getElementById("dropzone");
+  const fileInput = document.getElementById("fileInput");
+  const textInput = document.getElementById("textInput");
+  if (!dropzone || !fileInput || !textInput) return;
+  dropzone.addEventListener("click", () => fileInput.click());
+  dropzone.addEventListener("dragover", e => {
+    e.preventDefault();
+    dropzone.classList.add("dragover");
+  });
+  dropzone.addEventListener("dragleave", () => dropzone.classList.remove("dragover"));
+  dropzone.addEventListener("drop", e => {
+    e.preventDefault();
+    dropzone.classList.remove("dragover");
+    if (e.dataTransfer.files.length > 0) {
+      handleFile(e.dataTransfer.files[0], textInput);
+    }
+  });
+  fileInput.addEventListener("change", e => {
+    if (e.target.files.length > 0) {
+      handleFile(e.target.files[0], textInput);
+    }
+  });
+}
+
+async function handleFile(file, textInput) {
+  try {
+    const reader = new FileReader();
+    const name = file.name.toLowerCase();
+    if (name.endsWith(".txt") || name.endsWith(".md")) {
+      reader.onload = () => (textInput.value = reader.result);
+      reader.onerror = () => {
+        console.error("Erreur de lecture du fichier", reader.error);
+        alert("Impossible de lire le fichier.");
+      };
+      reader.readAsText(file);
+    } else if (name.endsWith(".docx")) {
+      reader.onload = async () => {
+        if (!window.mammoth) {
+          alert("La bibliothèque Mammoth n'est pas chargée.");
+          return;
+        }
+        try {
+          const result = await window.mammoth.extractRawText({ arrayBuffer: reader.result });
+          textInput.value = result.value;
+        } catch (err) {
+          console.error("Erreur lors de l'extraction du DOCX", err);
+          alert("Impossible de lire le fichier.");
+        }
+      };
+      reader.onerror = () => {
+        console.error("Erreur de lecture du fichier", reader.error);
+        alert("Impossible de lire le fichier.");
+      };
+      reader.readAsArrayBuffer(file);
+    } else {
+      alert("Format non supporté : utilisez .txt, .md ou .docx");
+    }
+  } catch (err) {
+    console.error("Erreur lors du traitement du fichier", err);
+    alert("Impossible de lire le fichier.");
+  }
+}
+
 const normalize = s => (s||"").toLowerCase().normalize("NFKD").replace(/[^\p{L}\p{N}\s-]/gu," ");
 const tokens = s => normalize(s).split(/\s+/).filter(w=>w.length>2);
 const uniq = a => [...new Set(a)];
@@ -481,6 +545,7 @@ async function runUnifiedPipeline(text, mode='offline'){
 
   document.addEventListener('DOMContentLoaded', ()=>{
     initTabs();
+    initFileUpload();
     wireSettings();
     wireAnalyze();
   });
