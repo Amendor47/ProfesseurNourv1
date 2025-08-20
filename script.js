@@ -28,6 +28,7 @@ function initFileUpload() {
   const dropzone = document.getElementById("dropzone");
   const fileInput = document.getElementById("fileInput");
   const textInput = document.getElementById("textInput");
+  if (!dropzone || !fileInput || !textInput) return;
   dropzone.addEventListener("click", () => fileInput.click());
   dropzone.addEventListener("dragover", e => {
     e.preventDefault();
@@ -51,13 +52,31 @@ function initFileUpload() {
 async function handleFile(file, textInput) {
   try {
     const reader = new FileReader();
-    if (file.name.endsWith(".txt") || file.name.endsWith(".md")) {
+    const name = file.name.toLowerCase();
+    if (name.endsWith(".txt") || name.endsWith(".md")) {
       reader.onload = () => (textInput.value = reader.result);
+      reader.onerror = () => {
+        console.error("Erreur de lecture du fichier", reader.error);
+        alert("Impossible de lire le fichier.");
+      };
       reader.readAsText(file);
-    } else if (file.name.endsWith(".docx")) {
+    } else if (name.endsWith(".docx")) {
       reader.onload = async () => {
-        const result = await mammoth.extractRawText({ arrayBuffer: reader.result });
-        textInput.value = result.value;
+        if (!window.mammoth) {
+          alert("La bibliothèque Mammoth n'est pas chargée.");
+          return;
+        }
+        try {
+          const result = await window.mammoth.extractRawText({ arrayBuffer: reader.result });
+          textInput.value = result.value;
+        } catch (err) {
+          console.error("Erreur lors de l'extraction du DOCX", err);
+          alert("Impossible de lire le fichier.");
+        }
+      };
+      reader.onerror = () => {
+        console.error("Erreur de lecture du fichier", reader.error);
+        alert("Impossible de lire le fichier.");
       };
       reader.readAsArrayBuffer(file);
     } else {
