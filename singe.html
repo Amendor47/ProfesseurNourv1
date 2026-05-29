@@ -1,0 +1,1097 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>WHEN YOU CALL ME, SINGE</title>
+<style>
+/* ============================================================
+   WHEN YOU CALL ME, SINGE
+   A bilingual interactive love story + runner / monkey-fight game.
+   Warm palette = Lou. Cold palette = Elias. They blend as they connect.
+   ============================================================ */
+
+:root{
+  /* warm — Lou */
+  --burnt-orange:#d8693b;
+  --dusty-pink:#e0a3a3;
+  --amber:#f2c14e;
+  --cream:#f4ead5;
+  /* cold — Elias */
+  --nordic-blue:#5b7fa6;
+  --snow-gray:#cdd6dd;
+  --lavender:#b8b0cf;
+  /* base */
+  --ink:#2b2533;
+  --paper:#1a1620;
+  --blend:0; /* 0 = separate, 1 = fully blended (set via JS) */
+}
+
+*{box-sizing:border-box;margin:0;padding:0;}
+html,body{height:100%;}
+body{
+  font-family:"Courier New",ui-monospace,monospace;
+  background:#0d0b12;
+  color:var(--cream);
+  overflow:hidden;
+  -webkit-tap-highlight-color:transparent;
+}
+
+/* ---- CRT / scanline overlay ---- */
+#crt{
+  position:fixed;inset:0;pointer-events:none;z-index:9000;
+  background:
+    repeating-linear-gradient(0deg, rgba(0,0,0,0.16) 0 1px, transparent 1px 3px);
+  mix-blend-mode:multiply;
+  animation:flicker 6s infinite;
+}
+#crt::after{
+  content:"";position:absolute;inset:0;
+  background:radial-gradient(ellipse at center, transparent 55%, rgba(0,0,0,0.55) 100%);
+}
+@keyframes flicker{0%,100%{opacity:.9}50%{opacity:.78}}
+
+/* ---- stage ---- */
+#stage{
+  position:relative;width:100%;height:100%;
+  display:flex;align-items:center;justify-content:center;
+  background:
+    radial-gradient(circle at 30% 20%, rgba(216,105,59,calc(.12 + var(--blend)*.05)), transparent 45%),
+    radial-gradient(circle at 70% 80%, rgba(91,127,166,calc(.14 + var(--blend)*.05)), transparent 45%),
+    #0d0b12;
+  transition:background .9s ease;
+}
+
+.screen{
+  position:absolute;inset:0;display:none;flex-direction:column;
+  align-items:center;justify-content:center;padding:24px;
+  animation:fadein .6s ease;
+}
+.screen.active{display:flex;}
+@keyframes fadein{from{opacity:0;transform:scale(.99)}to{opacity:1;transform:none}}
+
+/* ============ LANDING ============ */
+#landing{text-align:center;}
+.nokia{
+  width:110px;height:200px;border-radius:18px;
+  background:linear-gradient(160deg,#3a4a5a,#1c2530);
+  border:3px solid #0a0e13;margin:0 auto 18px;position:relative;
+  box-shadow:0 8px 30px rgba(0,0,0,.6);
+  image-rendering:pixelated;
+}
+.nokia.ring{animation:buzz .25s infinite;}
+@keyframes buzz{0%{transform:translate(0,0) rotate(0)}25%{transform:translate(-3px,2px) rotate(-2deg)}75%{transform:translate(3px,-2px) rotate(2deg)}100%{transform:translate(0,0)}}
+.nokia .scr{position:absolute;top:14px;left:12px;right:12px;height:90px;border-radius:6px;background:#9fb88a;border:2px solid #0a0e13;font-size:9px;color:#1a2410;padding:6px;text-align:left;line-height:1.4;}
+.nokia .keys{position:absolute;bottom:12px;left:14px;right:14px;height:60px;display:grid;grid-template-columns:repeat(3,1fr);gap:4px;}
+.nokia .keys span{background:#2a333d;border-radius:3px;}
+
+#title{
+  font-size:clamp(26px,7vw,58px);font-weight:bold;letter-spacing:3px;
+  background:linear-gradient(90deg,var(--burnt-orange),var(--amber) 40%,var(--snow-gray) 60%,var(--nordic-blue));
+  -webkit-background-clip:text;background-clip:text;color:transparent;
+  text-shadow:0 0 18px rgba(242,193,78,.15);
+  min-height:1.2em;
+}
+.tag{color:var(--dusty-pink);max-width:520px;margin:14px auto;font-size:14px;font-style:italic;line-height:1.6;opacity:.85;}
+.start-btn{
+  margin-top:18px;cursor:pointer;padding:12px 28px;border:2px solid var(--amber);
+  background:rgba(242,193,78,.08);color:var(--cream);font-family:inherit;font-size:15px;
+  border-radius:6px;letter-spacing:2px;transition:.25s;
+}
+.start-btn:hover{background:var(--amber);color:var(--ink);transform:translateY(-2px);}
+
+/* ambient desktop clutter */
+.hud-bits{position:absolute;inset:0;pointer-events:none;z-index:1;}
+.bit{position:absolute;font-size:11px;opacity:.5;}
+.aim{top:14px;left:16px;color:var(--amber);}
+.tw{top:14px;right:16px;color:var(--lavender);background:rgba(91,127,166,.15);padding:4px 8px;border-radius:4px;pointer-events:auto;cursor:default;}
+.ts{bottom:14px;left:16px;color:var(--snow-gray);}
+.music{bottom:14px;right:16px;color:var(--dusty-pink);background:rgba(0,0,0,.3);padding:6px 10px;border-radius:6px;pointer-events:auto;cursor:pointer;}
+.music:hover{color:var(--amber);}
+
+/* sleeping cat Baudelaire */
+#baudelaire{
+  position:absolute;bottom:10px;left:50%;transform:translateX(-50%);
+  font-size:30px;cursor:pointer;pointer-events:auto;z-index:5;
+  animation:breathe 3s ease-in-out infinite;text-shadow:0 0 8px rgba(0,0,0,.5);
+}
+@keyframes breathe{0%,100%{transform:translateX(-50%) scale(1)}50%{transform:translateX(-50%) scale(1.07)}}
+#baudelaire .z{position:absolute;top:-10px;right:-6px;font-size:11px;color:var(--lavender);opacity:.7;}
+
+/* ============ VISUAL NOVEL ============ */
+#vn{justify-content:flex-end;padding:0;}
+#vn-art{
+  position:absolute;inset:0;
+  background:#14101a;transition:background 1s ease;
+  display:flex;align-items:center;justify-content:center;overflow:hidden;
+}
+.vn-emoji{font-size:clamp(60px,16vw,140px);filter:drop-shadow(0 6px 24px rgba(0,0,0,.5));animation:floaty 5s ease-in-out infinite;}
+@keyframes floaty{0%,100%{transform:translateY(0)}50%{transform:translateY(-14px)}}
+.snow{position:absolute;inset:0;pointer-events:none;}
+.flake{position:absolute;color:#fff;opacity:.5;animation:fall linear infinite;}
+@keyframes fall{from{transform:translateY(-20px)}to{transform:translateY(105vh)}}
+
+#vn-box{
+  position:relative;z-index:10;width:100%;max-width:860px;margin:0 auto 4vh;
+  background:rgba(20,16,26,.92);border-top:3px solid var(--amber);
+  border-radius:14px 14px 0 0;padding:20px 24px 24px;backdrop-filter:blur(3px);
+  box-shadow:0 -10px 40px rgba(0,0,0,.6);
+}
+#vn-chapter{font-size:11px;letter-spacing:3px;color:var(--lavender);text-transform:uppercase;margin-bottom:8px;}
+#vn-speaker{font-size:15px;font-weight:bold;margin-bottom:6px;}
+.lou{color:var(--burnt-orange);}
+.elias{color:var(--nordic-blue);}
+.narr{color:var(--snow-gray);}
+#vn-text{font-size:16px;line-height:1.7;min-height:5em;color:var(--cream);}
+#vn-text .fr{color:var(--dusty-pink);font-style:italic;}
+#vn-text .sv{color:var(--lavender);font-style:italic;}
+#vn-choices{margin-top:16px;display:flex;flex-direction:column;gap:10px;}
+.choice{
+  cursor:pointer;text-align:left;padding:11px 16px;border:1px solid rgba(205,214,221,.25);
+  background:rgba(255,255,255,.03);color:var(--cream);font-family:inherit;font-size:14px;
+  border-radius:8px;transition:.18s;
+}
+.choice:hover{border-color:var(--amber);background:rgba(242,193,78,.1);transform:translateX(4px);}
+.choice.cold:hover{border-color:var(--nordic-blue);background:rgba(91,127,166,.12);}
+#vn-next{align-self:flex-end;margin-top:12px;cursor:pointer;color:var(--amber);font-size:13px;letter-spacing:2px;border:none;background:none;font-family:inherit;}
+#vn-next::after{content:" ▸";animation:blinknext 1s infinite;}
+@keyframes blinknext{50%{opacity:.3}}
+
+/* ============ CANVAS GAMES ============ */
+#game-wrap{flex-direction:column;}
+#game-banner{font-size:12px;letter-spacing:2px;color:var(--lavender);margin-bottom:8px;text-align:center;min-height:1.2em;}
+canvas{
+  background:#0a0810;border:2px solid rgba(242,193,78,.3);border-radius:10px;
+  max-width:96vw;max-height:74vh;touch-action:none;box-shadow:0 10px 40px rgba(0,0,0,.5);
+}
+#game-help{font-size:11px;color:var(--snow-gray);opacity:.7;margin-top:10px;text-align:center;line-height:1.6;}
+
+/* mobile control pad */
+#pad{display:none;position:fixed;bottom:0;left:0;right:0;z-index:8000;
+  justify-content:space-between;padding:14px;pointer-events:none;}
+#pad.show{display:flex;}
+.pad-btn{pointer-events:auto;width:74px;height:74px;border-radius:50%;
+  background:rgba(242,193,78,.18);border:2px solid var(--amber);color:var(--cream);
+  font-size:24px;display:flex;align-items:center;justify-content:center;user-select:none;}
+.pad-btn:active{background:var(--amber);color:var(--ink);}
+
+/* ============ MISC OVERLAYS ============ */
+.center-msg{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  background:rgba(13,11,18,.85);z-index:50;text-align:center;padding:24px;}
+.center-msg h2{font-size:clamp(22px,5vw,40px);margin-bottom:14px;}
+.center-msg p{color:var(--snow-gray);max-width:480px;line-height:1.6;margin-bottom:18px;}
+
+/* connection meter */
+#meter{position:fixed;top:10px;left:50%;transform:translateX(-50%);z-index:7000;
+  display:none;align-items:center;gap:8px;background:rgba(0,0,0,.4);padding:6px 12px;border-radius:20px;font-size:11px;}
+#meter.show{display:flex;}
+#meter .bar{width:140px;height:8px;border-radius:4px;background:rgba(255,255,255,.12);overflow:hidden;}
+#meter .fill{height:100%;width:50%;background:linear-gradient(90deg,var(--nordic-blue),var(--amber));transition:width .4s;}
+
+/* phone-call final */
+#callscreen{background:#05040a;}
+.call-ring{font-size:80px;animation:buzz .3s infinite;}
+.call-name{font-size:24px;margin:18px 0 6px;color:var(--cream);}
+.call-sub{color:var(--lavender);font-size:13px;margin-bottom:8px;}
+.call-monologue{color:var(--snow-gray);font-style:italic;min-height:2.4em;max-width:420px;text-align:center;transition:.4s;}
+.call-btns{display:flex;gap:30px;margin-top:30px;}
+.call-btn{width:70px;height:70px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:30px;cursor:pointer;border:none;}
+.answer{background:#3aa856;}.answer:active{transform:scale(.92);}
+
+/* credits */
+#credits{overflow:hidden;}
+.credit-roll{text-align:center;line-height:2;color:var(--snow-gray);animation:roll 26s linear forwards;}
+@keyframes roll{from{transform:translateY(60vh)}to{transform:translateY(-90vh)}}
+.sub-notif{position:fixed;bottom:20px;left:50%;transform:translateX(-50%) translateY(120px);
+  background:#1a1620;border:1px solid var(--nordic-blue);border-radius:10px;padding:14px 20px;z-index:8000;
+  transition:transform .6s cubic-bezier(.2,1.4,.4,1);max-width:90vw;}
+.sub-notif.show{transform:translateX(-50%) translateY(0);}
+.sub-notif b{color:var(--nordic-blue);}
+.sub-notif span{color:var(--lavender);font-size:12px;}
+
+.unlock-toast{position:fixed;top:50px;left:50%;transform:translateX(-50%);z-index:9500;
+  background:var(--amber);color:var(--ink);padding:10px 18px;border-radius:8px;font-size:12px;
+  opacity:0;transition:.4s;pointer-events:none;}
+.unlock-toast.show{opacity:1;}
+
+a.link{color:var(--amber);}
+::selection{background:var(--burnt-orange);color:#fff;}
+</style>
+</head>
+<body>
+<div id="crt"></div>
+<div id="meter"><span>connexion</span><div class="bar"><div class="fill" id="meterfill"></div></div></div>
+<div class="unlock-toast" id="toast"></div>
+
+<div id="stage">
+
+  <!-- ===================== LANDING ===================== -->
+  <section id="landing" class="screen active">
+    <div class="hud-bits">
+      <div class="bit aim">● lou_online — streaming</div>
+      <div class="bit tw" id="twnotif">🔔 EliasNordicBlue is now following</div>
+      <div class="bit ts">last seen 03:14 — "whatever lol"</div>
+      <div class="bit music" id="musicwidget">♪ lo-fi // paused</div>
+    </div>
+    <div class="nokia ring" id="nokia">
+      <div class="scr">incoming…<br>+33 ?? ?? ?? ??<br><br>"singe"</div>
+      <div class="keys"><span></span><span></span><span></span><span></span><span></span><span></span></div>
+    </div>
+    <h1 id="title"></h1>
+    <p class="tag">"Somewhere between a Discord call and a Swedish winter,<br>two people accidentally fell in love."</p>
+    <button class="start-btn" id="startbtn" disabled style="opacity:.4">…</button>
+    <div id="baudelaire" title="a sleeping cat">🐈‍⬛<span class="z">z z</span></div>
+  </section>
+
+  <!-- ===================== VISUAL NOVEL ===================== -->
+  <section id="vn" class="screen">
+    <div id="vn-art"><div class="vn-emoji" id="vnemoji">🎧</div><div class="snow" id="snow"></div></div>
+    <div id="vn-box">
+      <div id="vn-chapter">PROLOGUE</div>
+      <div id="vn-speaker" class="narr">—</div>
+      <div id="vn-text"></div>
+      <div id="vn-choices"></div>
+      <button id="vn-next">continue</button>
+    </div>
+  </section>
+
+  <!-- ===================== CANVAS GAME ===================== -->
+  <section id="game-wrap" class="screen">
+    <div id="game-banner"></div>
+    <canvas id="cv" width="900" height="460"></canvas>
+    <div id="game-help"></div>
+  </section>
+
+</div>
+
+<!-- mobile pad -->
+<div id="pad">
+  <div class="pad-btn" id="padL">◀</div>
+  <div class="pad-btn" id="padA">●</div>
+  <div class="pad-btn" id="padR">▶</div>
+</div>
+
+<script>
+/* ============================================================
+   GLOBAL STATE
+   ============================================================ */
+const S = {
+  connection: 50,      // emotional-connection meter, 0..100 -> ending
+  flags:{ heart:false, vodUnlocked:false, lakeAnswered:false, quiz:0, deleted:0 },
+  blend:0,
+};
+const screens = {
+  landing: document.getElementById('landing'),
+  vn:      document.getElementById('vn'),
+  game:    document.getElementById('game-wrap'),
+};
+function show(name){
+  Object.values(screens).forEach(s=>s.classList.remove('active'));
+  screens[name].classList.add('active');
+}
+function setBlend(v){
+  S.blend = Math.max(0,Math.min(1,v));
+  document.documentElement.style.setProperty('--blend',S.blend.toFixed(2));
+}
+function bump(n){
+  S.connection = Math.max(0,Math.min(100,S.connection+n));
+  document.getElementById('meterfill').style.width = S.connection+'%';
+  setBlend(S.connection/100);
+}
+function toast(msg){
+  const t=document.getElementById('toast');
+  t.textContent=msg;t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'),2600);
+}
+const isTouch = ('ontouchstart' in window)||navigator.maxTouchPoints>0;
+
+/* ============================================================
+   LANDING — typewriter title + buzzing phone + cat
+   ============================================================ */
+(function landing(){
+  const titleText="WHEN YOU CALL ME, SINGE";
+  const el=document.getElementById('title');
+  let i=0;
+  const tick=()=>{
+    el.textContent=titleText.slice(0,i);
+    i++;
+    if(i<=titleText.length){ setTimeout(tick, 70+Math.random()*60); }
+    else{
+      const b=document.getElementById('startbtn');
+      b.disabled=false;b.style.opacity=1;b.textContent="▶ press call";
+      document.getElementById('nokia').classList.remove('ring');
+    }
+  };
+  setTimeout(tick,500);
+
+  document.getElementById('startbtn').addEventListener('click',()=>{ Audio.start(); story.go('c1'); });
+  document.getElementById('musicwidget').addEventListener('click',Audio.toggle);
+
+  // Baudelaire the cat -> hidden VOD
+  document.getElementById('baudelaire').addEventListener('click',()=>{
+    if(!S.flags.vodUnlocked){
+      S.flags.vodUnlocked=true;
+      toast("🐈‍⬛ Baudelaire stretched. A hidden VOD chapter unlocked.");
+      bump(4);
+      document.getElementById('twnotif').textContent="🔔 VOD archive: 'the 9-hour stream' unlocked";
+    } else { toast("🐈‍⬛ Baudelaire is still asleep."); }
+  });
+})();
+
+/* ============================================================
+   TINY WEBAUDIO SOUND ENGINE (lo-fi blips, no assets)
+   ============================================================ */
+const Audio = (function(){
+  let ctx=null, musicOn=false, musicTimer=null;
+  function ac(){ if(!ctx) ctx=new (window.AudioContext||window.webkitAudioContext)(); return ctx; }
+  function blip(freq=440,dur=.08,type='square',gain=.05){
+    try{const c=ac();const o=c.createOscillator(),g=c.createGain();
+      o.type=type;o.frequency.value=freq;g.gain.value=gain;
+      o.connect(g);g.connect(c.destination);o.start();
+      g.gain.exponentialRampToValueAtTime(0.0001,c.currentTime+dur);
+      o.stop(c.currentTime+dur);}catch(e){}
+  }
+  function start(){ ac(); if(ctx.state==='suspended')ctx.resume(); }
+  function toggle(){
+    musicOn=!musicOn;
+    document.getElementById('musicwidget').textContent = "♪ lo-fi // "+(musicOn?"playing":"paused");
+    if(musicOn){ start(); loop(); } else { clearTimeout(musicTimer); }
+  }
+  const scale=[261.6,293.7,329.6,392,440,523.3];
+  function loop(){
+    if(!musicOn)return;
+    const n=scale[Math.floor(Math.random()*scale.length)]/2;
+    blip(n,.5,'sine',.03);
+    musicTimer=setTimeout(loop,600+Math.random()*500);
+  }
+  return {blip,start,toggle,
+    ui:()=>blip(660,.05,'square',.04),
+    good:()=>{blip(523,.08);setTimeout(()=>blip(784,.12),90);},
+    bad:()=>blip(140,.18,'sawtooth',.05),
+    hit:()=>blip(200,.06,'square',.06),
+    ring:()=>{blip(880,.2,'sine',.05);setTimeout(()=>blip(740,.3,'sine',.05),250);}
+  };
+})();
+
+/* ============================================================
+   STORY ENGINE  (visual-novel nodes)
+   Each node: {chapter, speaker, cls, art, bg, text, choices?, next?, action?}
+   ============================================================ */
+const vnEmoji=document.getElementById('vnemoji');
+const vnArt  =document.getElementById('vn-art');
+const snowBox=document.getElementById('snow');
+
+function setSnow(on){
+  snowBox.innerHTML='';
+  if(!on)return;
+  for(let i=0;i<26;i++){
+    const f=document.createElement('div');f.className='flake';f.textContent='❄';
+    f.style.left=Math.random()*100+'%';
+    f.style.fontSize=(6+Math.random()*10)+'px';
+    f.style.animationDuration=(4+Math.random()*6)+'s';
+    f.style.animationDelay=(-Math.random()*6)+'s';
+    snowBox.appendChild(f);
+  }
+}
+
+const story = (function(){
+  const $chap=document.getElementById('vn-chapter');
+  const $spk =document.getElementById('vn-speaker');
+  const $txt =document.getElementById('vn-text');
+  const $ch  =document.getElementById('vn-choices');
+  const $next=document.getElementById('vn-next');
+  let cur=null, typing=null, full="";
+
+  function render(node){
+    cur=node;
+    show('vn');
+    document.getElementById('meter').classList.add('show');
+    $chap.textContent=node.chapter||'';
+    $spk.textContent=node.speaker||'—';
+    $spk.className=node.cls||'narr';
+    if(node.art) vnEmoji.textContent=node.art;
+    if(node.bg)  vnArt.style.background=node.bg;
+    setSnow(!!node.snow);
+    if(node.action) node.action();
+
+    // typewriter
+    full=node.text||'';
+    $txt.innerHTML='';
+    $ch.innerHTML='';
+    $next.style.display='none';
+    clearInterval(typing);
+    // because text contains html spans, we reveal by char on a temp string then set html
+    let plain=full;
+    let idx=0;
+    typing=setInterval(()=>{
+      idx+=2;
+      // crude: show progressively but keep tags intact at the end
+      if(idx>=plain.length){
+        clearInterval(typing);
+        $txt.innerHTML=full;
+        showChoices(node);
+      } else {
+        // strip tags for partial view
+        $txt.textContent = plain.replace(/<[^>]+>/g,'').slice(0,idx);
+      }
+    },14);
+    Audio.ui();
+  }
+  function showChoices(node){
+    if(node.choices){
+      node.choices.forEach(c=>{
+        const b=document.createElement('button');
+        b.className='choice'+(c.cold?' cold':'');
+        b.textContent=c.label;
+        b.onclick=()=>{ Audio.ui(); if(c.effect)c.effect(); go(c.to); };
+        $ch.appendChild(b);
+      });
+    } else {
+      $next.style.display='block';
+      $next.onclick=()=>{ Audio.ui(); go(node.next); };
+    }
+  }
+  $next.onclick=()=>{};
+  // allow click/space to skip typewriter
+  document.getElementById('vn-box').addEventListener('click',()=>{
+    if(typing && $txt.textContent.length < full.replace(/<[^>]+>/g,'').length){
+      clearInterval(typing);$txt.innerHTML=full;showChoices(cur);
+    }
+  });
+
+  function go(id){
+    if(typeof id==='function'){ id(); return; }
+    const node=NODES[id];
+    if(!node){ console.warn('missing node',id); return; }
+    render(node);
+  }
+  return {go,render};
+})();
+
+/* ============================================================
+   STORY NODES
+   ============================================================ */
+const NODES = {
+
+/* ---------- CHAPTER 1 ---------- */
+c1:{chapter:"Chapter 1 — The First Stream", speaker:"narrator", cls:"narr",
+  art:"🌙", bg:"radial-gradient(circle at 50% 30%,#241a2e,#0d0b12)",
+  text:"It's 1am. Elias can't sleep. He clicks a Twitch clip: a French streamer crying over the ending of an indie game — apologizing to chat in two languages.",
+  next:"c1b"},
+c1b:{chapter:"Chapter 1 — The First Stream", speaker:"Lou", cls:"lou", art:"🎧",
+  bg:"radial-gradient(circle at 30% 40%,#3a1f1a,#0d0b12)",
+  text:"<span class='fr'>\"Je sais que c'est stupide…\"</span> I know it's stupid, but I think art is supposed to hurt a little.",
+  next:"c1c"},
+c1c:{chapter:"Chapter 1 — The First Stream", speaker:"narrator", cls:"narr", art:"💬",
+  text:"Alerts overlap. Music too loud. Chat spams frog emotes. Elias should close the tab. Instead he hovers over the message box. Some love stories are decided by tiny moments of attention.",
+  choices:[
+    {label:"💙 send a single blue heart", cold:true, effect:()=>{S.flags.heart=true;bump(10);toast("Lou noticed the restrained one.");}, to:"c1heart"},
+    {label:"✕ close the tab", effect:()=>bump(-40), to:"c1leave"},
+  ]},
+c1leave:{chapter:"Chapter 1 — The First Stream", speaker:"narrator", cls:"narr", art:"🌑",
+  bg:"#0d0b12",
+  text:"He closes the tab. Not dramatically. Just quietly. He never learns her name. She never learns his. The story ends here — the way most almost-loves do.",
+  choices:[{label:"…try again", effect:()=>bump(50), to:"c1"}]},
+c1heart:{chapter:"Chapter 1 — The First Stream", speaker:"narrator", cls:"narr", art:"💙",
+  text:"Everyone in chat performs affection loudly. Elias does not. Lou notices usernames obsessively — especially the silent ones. <span class='sv'>EliasNordicBlue</span>. She remembers it. Not because it's romantic — because it's restrained.",
+  next:"c1race_intro"},
+c1race_intro:{chapter:"Chapter 1 — The First Stream", speaker:"Lou", cls:"lou", art:"🏃‍♀️",
+  text:"\"Okay chat, NEW BIT — I'm gonna out-run the quiet boy across the rooftops. Loser admits feelings first. <span class='fr'>Allez, le singe!</span>\"",
+  next:()=>RunnerGame.start(1)},
+
+/* after runner level 1 -> monkey fight 1 -> chapter 2 */
+c2:{chapter:"Chapter 2 — Le problème des émotions", speaker:"narrator", cls:"narr", art:"🎙️",
+  bg:"radial-gradient(circle at 60% 30%,#2a1d2e,#0d0b12)",
+  text:"After a bad stream, Lou sends Elias a four-minute voice message: three emotional topics, two tangents, one meme, one joke masking insecurity, one genuine plea for reassurance. Elias listens three times. He still doesn't know what she wants.",
+  next:"quiz_intro"},
+quiz_intro:{chapter:"Chapter 2 — Decode Lou's Emotions", speaker:"Elias", cls:"elias", art:"❓",
+  text:"\"I want to get this right.\" Help him translate. <span class='sv'>Lou speaks through implication. Elias speaks through action. Neither is wrong — but both feel invisible.</span>",
+  next:()=>quiz.start()},
+
+/* after quiz */
+c2sleep:{chapter:"Chapter 2 — The First Real Connection", speaker:"narrator", cls:"narr", art:"😴",
+  bg:"linear-gradient(160deg,#2a1d2e 0%,#1a2230 100%)",
+  text:"Lou falls asleep on the Discord call. Elias stays connected — silently — for three hours. He works while hearing her keyboard clicks, her breathing. Nothing romantic is said. It becomes the most intimate moment either has had in months.",
+  action:()=>{bump(8);setBlend(S.connection/100);},
+  next:"c3"},
+
+/* ---------- CHAPTER 3 SWEDEN ---------- */
+c3:{chapter:"Chapter 3 — Första resan", speaker:"narrator", cls:"narr", art:"🇸🇪",
+  bg:"linear-gradient(160deg,#1a2535,#0d0b12)", snow:true,
+  text:"Lou visits Sweden. Less internet. More reality. Choose a memory to step into.",
+  choices:[
+    {label:"🏙️ Stockholm", to:"c3stockholm"},
+    {label:"🧊 The frozen lake", to:"c3lake"},
+    {label:"☕ The café", to:"c3cafe"},
+  ]},
+c3stockholm:{chapter:"Chapter 3 — Stockholm", speaker:"Lou", cls:"lou", art:"🏙️", snow:true,
+  bg:"linear-gradient(160deg,#1a2535,#0d0b12)",
+  text:"\"This city looks emotionally unavailable.\" — Elias laughs so hard he <i>snorts</i> for the first time. Lou never lets him forget it.",
+  action:()=>bump(4),
+  next:"c3"},
+c3cafe:{chapter:"Chapter 3 — The Café", speaker:"narrator", cls:"narr", art:"☕", snow:true,
+  bg:"linear-gradient(160deg,#2a2230,#0d0b12)",
+  text:"The café owner assumes they're married. Neither corrects him. Afterwards they walk in silence for too long — because suddenly the idea no longer feels impossible.",
+  action:()=>bump(5),
+  next:"c3"},
+c3lake:{chapter:"Chapter 3 — The Frozen Lake", speaker:"Lou", cls:"lou", art:"🧊", snow:true,
+  bg:"linear-gradient(160deg,#16202e,#0d0b12)",
+  text:"Lou talks endlessly because silence terrifies her. Then, quietly: \"Do you ever feel like people only love versions of you?\"",
+  next:"c3lake2"},
+c3lake2:{chapter:"Chapter 3 — The Frozen Lake", speaker:"Elias", cls:"elias", art:"🧊", snow:true,
+  bg:"linear-gradient(160deg,#16202e,#0d0b12)",
+  text:"A long pause. The kind that used to scare her.<br><br><span class='sv'>\"…Yes.\"</span>",
+  next:"c3lake3"},
+c3lake3:{chapter:"Chapter 3 — The Frozen Lake", speaker:"narrator", cls:"narr", art:"❄️", snow:true,
+  bg:"linear-gradient(160deg,#16202e,#0d0b12)",
+  text:"It's the first moment Lou realizes: his silence is not emptiness. It is caution.",
+  action:()=>{S.flags.lakeAnswered=true;bump(12);},
+  next:()=>RunnerGame.start(2)},
+
+/* after runner 2 + fight 2 -> chapter 4 */
+c4:{chapter:"Chapter 4 — La grande dispute", speaker:"narrator", cls:"narr", art:"💢",
+  bg:"radial-gradient(circle at 40% 60%,#3a1820,#0d0b12)",
+  text:"Lou overshares online after a fight. Not maliciously — impulsively. Elias disappears. Not to punish her: to regulate himself. She reads silence as rejection. He reads oversharing as betrayal. Both hurt each other trying to protect themselves.",
+  next:"c4texts"},
+c4texts:{chapter:"Chapter 4 — La grande dispute", speaker:"narrator", cls:"narr", art:"💬",
+  text:"You hold both phones now. Typing bubbles appear, vanish, return. You can delete a message before sending. Choose what actually crosses the distance.",
+  next:()=>TextGame.start()},
+
+/* climax line, set after text minigame */
+c4climax:{chapter:"Chapter 4 — La grande dispute", speaker:"Elias", cls:"elias", art:"💙",
+  bg:"linear-gradient(160deg,#1a2230,#2a1820)",
+  text:"\"I don't always know what you mean. I get it wrong. But —\"<br><br><b>\"I stay even when I don't understand.\"</b>",
+  next:"c4climax2"},
+c4climax2:{chapter:"Chapter 4 — La grande dispute", speaker:"narrator", cls:"narr", art:"🫶",
+  text:"Not \"I understand you perfectly.\" Not \"you are easy to love.\" Just: I stay. And for Lou, that matters more.",
+  action:()=>bump(10),
+  next:"final"},
+
+/* ---------- FINAL CHAPTER ---------- */
+final:{chapter:"Final Chapter — When You Call Me", speaker:"narrator", cls:"narr", art:"📞",
+  bg:"#05040a",
+  text:"They mostly communicate through text. Voice feels too intimate. Too real. So the final chapter begins with a ringing phone.",
+  next:()=>PhoneCall.start()},
+};
+
+/* ============================================================
+   DECODE-LOU QUIZ
+   ============================================================ */
+const quiz = (function(){
+  const Q=[
+    {q:"\"I'm fine.\" — what does Lou mean?",
+     a:[["I am, in fact, fine.",0],["Please ask me one more time, gently.",2],["Leave me alone forever.",0]]},
+    {q:"Why would Lou send a playlist at 2am?",
+     a:[["She wants song recommendations.",0],["She's telling you how she feels in the only language that doesn't scare her.",2],["Her phone glitched.",0]]},
+    {q:"\"whatever lol\" emotionally translates to…",
+     a:[["genuine indifference",0],["\"this matters to me and I'm terrified it doesn't to you\"",2],["a typo",0]]},
+    {q:"What reassurance actually works on Lou?",
+     a:[["\"Calm down, it's not a big deal.\"",0],["Staying on the call. Bringing water. Not leaving.",2],["A long logical explanation.",0]]},
+  ];
+  let i=0;
+  function start(){ i=0; ask(); }
+  function ask(){
+    if(i>=Q.length){ done(); return; }
+    const node=Q[i];
+    story.render({
+      chapter:"Chapter 2 — Decode Lou's Emotions",
+      speaker:"Lou (decode "+(i+1)+"/"+Q.length+")", cls:"lou", art:"🧩",
+      bg:"radial-gradient(circle at 50% 40%,#2a1d2e,#0d0b12)",
+      text:node.q,
+      choices:node.a.map(opt=>({
+        label:opt[0],
+        effect:()=>{ if(opt[1]>0){Audio.good();S.flags.quiz++;bump(opt[1]);} else {Audio.bad();bump(-1);} },
+        to:()=>{ i++; setTimeout(ask,260); }
+      }))
+    });
+  }
+  function done(){
+    const good=S.flags.quiz;
+    story.render({
+      chapter:"Chapter 2 — Decode Lou's Emotions", speaker:"narrator", cls:"narr", art:"🪞",
+      text:"You decoded "+good+"/"+Q.length+" correctly. "+(good>=3
+        ? "You're learning her grammar of implication. It's hard. Wrong answers were never the point — misunderstanding is just this easy."
+        : "You misread her more than once. That's okay. Elias does too. The story isn't about getting it right — it's about staying to try again."),
+      next:"c2sleep"
+    });
+  }
+  return {start};
+})();
+
+/* ============================================================
+   TEXT-MESSAGE MINIGAME (Chapter 4)
+   pick the message that crosses the distance; deleting impulsive ones helps
+   ============================================================ */
+const TextGame=(function(){
+  const beats=[
+    {ctx:"Lou typed three angry paragraphs. The bubble blinks.",
+     opt:[["send all three paragraphs",-3],["delete them. send: \"i got scared. that's all it was.\"",4]]},
+    {ctx:"Elias has been silent 40 minutes. Your move (as Lou).",
+     opt:[["\"forget it. obviously you don't care.\"",-3],["\"i don't need you to fix it. i just need to know you're still there.\"",4]]},
+    {ctx:"Elias is typing… (your move, as Elias)",
+     opt:[["\"you shouldn't have posted that.\"",-2],["\"i went quiet because i needed to think, not because i left.\"",4]]},
+  ];
+  let i=0;
+  function start(){ i=0; beat(); }
+  function beat(){
+    if(i>=beats.length){ story.go('c4climax'); return; }
+    const b=beats[i];
+    story.render({
+      chapter:"Chapter 4 — La grande dispute",
+      speaker:"text thread ("+(i+1)+"/"+beats.length+")", cls:"narr", art:"📱",
+      bg:"radial-gradient(circle at 40% 60%,#2a1820,#0d0b12)",
+      text:b.ctx,
+      choices:b.opt.map(o=>({
+        label:o[0],
+        cold:o[1]>0,
+        effect:()=>{ if(o[1]>0){Audio.good();if(o[0].startsWith('delete'))S.flags.deleted++;}else Audio.bad(); bump(o[1]); },
+        to:()=>{ i++; setTimeout(beat,260); }
+      }))
+    });
+  }
+  return {start};
+})();
+
+/* ============================================================
+   CANVAS — shared setup
+   ============================================================ */
+const cv=document.getElementById('cv'), ctx2=cv.getContext('2d');
+const W=cv.width, H=cv.height;
+const banner=document.getElementById('game-banner');
+const help=document.getElementById('game-help');
+const input={left:false,right:false,jump:false,jumpEdge:false,act:false,actEdge:false};
+
+window.addEventListener('keydown',e=>{
+  if(['ArrowLeft','a','A'].includes(e.key)) input.left=true;
+  if(['ArrowRight','d','D'].includes(e.key)) input.right=true;
+  if([' ','ArrowUp','w','W'].includes(e.key)){ if(!input.jump)input.jumpEdge=true; input.jump=true; e.preventDefault();}
+  if(['x','X','Enter','f','F'].includes(e.key)){ if(!input.act)input.actEdge=true; input.act=true; }
+});
+window.addEventListener('keyup',e=>{
+  if(['ArrowLeft','a','A'].includes(e.key)) input.left=false;
+  if(['ArrowRight','d','D'].includes(e.key)) input.right=false;
+  if([' ','ArrowUp','w','W'].includes(e.key)) input.jump=false;
+  if(['x','X','Enter','f','F'].includes(e.key)) input.act=false;
+});
+// mobile pad
+function bindPad(){
+  const pad=document.getElementById('pad');
+  if(isTouch) pad.classList.add('show');
+  const L=document.getElementById('padL'),R=document.getElementById('padR'),A=document.getElementById('padA');
+  const dn=(set)=>(e)=>{e.preventDefault();set(true);};
+  const up=(set)=>(e)=>{e.preventDefault();set(false);};
+  L.ontouchstart=L.onmousedown=dn(v=>input.left=v); L.ontouchend=L.onmouseup=up(v=>input.left=v);
+  R.ontouchstart=R.onmousedown=dn(v=>input.right=v); R.ontouchend=R.onmouseup=up(v=>input.right=v);
+  A.ontouchstart=A.onmousedown=(e)=>{e.preventDefault();if(!input.jump)input.jumpEdge=true;input.jump=true;if(!input.act)input.actEdge=true;input.act=true;};
+  A.ontouchend=(e)=>{e.preventDefault();input.jump=false;input.act=false;};
+}
+bindPad();
+
+let rafId=null, loopFn=null;
+function startLoop(fn){ stopLoop(); loopFn=fn; const step=(t)=>{ if(!loopFn)return; loopFn(t); input.jumpEdge=false; input.actEdge=false; rafId=requestAnimationFrame(step);}; rafId=requestAnimationFrame(step); }
+function stopLoop(){ if(rafId)cancelAnimationFrame(rafId); rafId=null; loopFn=null; }
+
+function showCanvasMsg(title,sub,btnLabel,cb){
+  const div=document.createElement('div');
+  div.className='center-msg';
+  div.innerHTML=`<h2>${title}</h2><p>${sub}</p>`;
+  const b=document.createElement('button');b.className='start-btn';b.textContent=btnLabel;
+  b.onclick=()=>{Audio.ui();div.remove();cb();};
+  div.appendChild(b);
+  document.getElementById('game-wrap').appendChild(div);
+}
+
+// pixel-person drawing helper
+function drawRunner(x,y,col,hair,w=26,h=40,run=0,facing=1){
+  ctx2.save();ctx2.translate(x,y);
+  // legs (animated)
+  ctx2.fillStyle='#23202b';
+  const swing=Math.sin(run)*7;
+  ctx2.fillRect(-7, h-14, 6, 14+ (facing>0?swing:-swing));
+  ctx2.fillRect(2,  h-14, 6, 14- (facing>0?swing:-swing));
+  // body
+  ctx2.fillStyle=col;
+  ctx2.fillRect(-9,8,18,h-20);
+  // head
+  ctx2.fillStyle='#f0d7c2';
+  ctx2.fillRect(-7,-6,14,15);
+  // hair
+  ctx2.fillStyle=hair;
+  ctx2.fillRect(-8,-9,16,7);
+  ctx2.fillRect(facing>0?5:-8,-9,3,12);
+  // arm
+  ctx2.fillStyle=col;
+  ctx2.fillRect(facing>0?6:-9, 12, 5, 16+Math.sin(run+1)*4);
+  ctx2.restore();
+}
+
+/* ============================================================
+   GAME 1 & 2 — RUNNER: Lou races Elias
+   Lou auto-runs right; player jumps obstacles & keeps pace.
+   Beat Elias to the finish -> connection up.
+   ============================================================ */
+const RunnerGame=(function(){
+  let level=1, st;
+  function start(lvl){
+    level=lvl||1;
+    show('game');
+    document.getElementById('meter').classList.add('show');
+    banner.textContent = level===1
+      ? "RACE — Lou vs Elias  //  'loser admits feelings first'"
+      : "RACE 2 — across the frozen lake";
+    help.innerHTML = isTouch
+      ? "tap ● to jump. reach the finish before Elias."
+      : "SPACE / ↑ = jump &nbsp;·&nbsp; reach the finish before Elias. hold to keep pace.";
+    init();
+    showCanvasMsg(level===1?"THE FIRST STREAM":"FÖRSTA RESAN",
+      level===1?"Out-run the quiet boy across the rooftops.":"Race him across the ice. Don't slip into silence.",
+      "▶ run", ()=>startLoop(frame));
+  }
+  function init(){
+    st={
+      lou:{x:120,y:300,vy:0,onGround:true,run:0},
+      eliasX:60, // distance behind, in race units
+      dist:0, finish:2600, speed:4.2, baseSpeed:4.2,
+      obstacles:[], spawn:0, scrollX:0,
+      eliasDist:0, eliasSpeed: level===1?3.9:4.05,
+      groundY:340, over:false, won:false,
+      slipped:0,
+    };
+    // pre-generate obstacles along the track
+    let d=600;
+    while(d<st.finish-200){ st.obstacles.push({d, hit:false, kind: Math.random()<.5?'gap':'box'}); d+=260+Math.random()*200; }
+  }
+  function frame(){
+    const s=st;
+    ctx2.clearRect(0,0,W,H);
+    // backdrop
+    const g=ctx2.createLinearGradient(0,0,0,H);
+    if(level===1){ g.addColorStop(0,'#241a2e');g.addColorStop(1,'#3a1f1a'); }
+    else { g.addColorStop(0,'#16202e');g.addColorStop(1,'#1a2535'); }
+    ctx2.fillStyle=g;ctx2.fillRect(0,0,W,H);
+    // parallax dots/stars
+    ctx2.fillStyle='rgba(255,255,255,.15)';
+    for(let i=0;i<40;i++){ const px=(i*120 - s.dist*0.3)%(W+40); ctx2.fillRect((px+W+40)%(W+40)-20, 30+(i*53)%140, 2,2); }
+
+    if(!s.over){
+      // advance race
+      s.dist += s.speed;
+      s.eliasDist += s.eliasSpeed;
+      s.lou.run += s.speed*0.05;
+
+      // physics
+      const L=s.lou;
+      if(input.jumpEdge && L.onGround){ L.vy=-12; L.onGround=false; Audio.blip(520,.07,'square',.05); }
+      L.vy+=0.6; L.y+=L.vy;
+      if(L.y>=300){ L.y=300; L.vy=0; L.onGround=true; }
+
+      // obstacle collisions (relative to dist)
+      for(const o of s.obstacles){
+        const screenX = 120 + (o.d - s.dist);
+        if(!o.hit && screenX<150 && screenX>90){
+          // must be jumping
+          if(L.onGround && L.y>290){
+            o.hit=true; s.speed=Math.max(2.4,s.speed-1.4); s.slipped++; Audio.bad();
+            banner.textContent = level===1? "tripped on a cable!" : "slipped on the ice!";
+          } else { o.hit=true; s.speed=Math.min(s.baseSpeed+0.6,s.speed+0.2); Audio.blip(700,.05,'square',.04);}
+        }
+      }
+      // recover speed slowly
+      s.speed += (s.baseSpeed - s.speed)*0.01;
+
+      // win / lose
+      if(s.dist>=s.finish){ s.over=true; s.won=true; finishRace(true); }
+      else if(s.eliasDist>=s.finish){ s.over=true; s.won=false; finishRace(false); }
+    }
+
+    // ground
+    ctx2.fillStyle = level===1? '#1a141f' : '#223247';
+    ctx2.fillRect(0,340,W,H-340);
+    ctx2.strokeStyle= level===1?'rgba(242,193,78,.25)':'rgba(184,176,207,.3)';
+    ctx2.beginPath();ctx2.moveTo(0,340);ctx2.lineTo(W,340);ctx2.stroke();
+
+    // obstacles
+    for(const o of s.obstacles){
+      const sx=120+(o.d - s.dist);
+      if(sx<-40||sx>W+40)continue;
+      if(o.kind==='box'){ ctx2.fillStyle=o.hit?'#555':'#7a4'; ctx2.fillRect(sx-12,316,24,24);}
+      else { ctx2.fillStyle='#0a0810'; ctx2.fillRect(sx-16,340,32,40);}
+    }
+    // finish line
+    const fsx=120+(s.finish - s.dist);
+    if(fsx<W+60){
+      for(let i=0;i<8;i++){ ctx2.fillStyle=i%2?'#fff':'#000'; ctx2.fillRect(fsx, 250+i*12, 14,12);}
+      ctx2.fillStyle='var(--amber)';
+    }
+
+    // Elias ghost (his progress shown as a position relative to Lou)
+    const gap = (s.dist - s.eliasDist); // positive => Lou ahead
+    const eliasScreenX = 120 - gap*0.6;
+    drawRunner(Math.max(20,Math.min(W-40,eliasScreenX)), 300, '#5b7fa6', '#3a4a5a', 26,40, s.lou.run*0.9, 1);
+    // Lou
+    drawRunner(120, s.lou.y, '#d8693b', '#6b2d1a', 26,40, s.lou.run, 1);
+
+    // hud
+    ctx2.fillStyle='#f4ead5';ctx2.font='13px Courier New';
+    ctx2.fillText(gap>=0? "Lou leads by "+Math.round(gap)+"" : "Elias leads by "+Math.round(-gap), 16,24);
+    ctx2.fillText(Math.round(Math.min(100,s.dist/s.finish*100))+"%",W-60,24);
+  }
+  function finishRace(won){
+    stopLoop();
+    if(won){ bump(8); Audio.good(); }
+    else { bump(-4); Audio.bad(); }
+    setTimeout(()=>{
+      showCanvasMsg(
+        won? (level===1?"Lou wins. Elias has to admit it first.":"She beats him across the lake."):
+             (level===1?"Elias wins by a step.":"He waits for her at the far shore."),
+        won? "\"told you, le singe.\" He just smiles — which, from him, is a paragraph."
+           : "He doesn't gloat. He offers a hand. Different people, different finish lines.",
+        "next ▸",
+        ()=> MonkeyFight.start(level)
+      );
+    },700);
+  }
+  return {start};
+})();
+
+/* ============================================================
+   MONKEY FIGHT — "some monkey fight Lou in between"
+   Lou must fend off chaos-monkeys (intrusive-thought gremlins)
+   between race segments. Punch them; survive the wave.
+   ============================================================ */
+const MonkeyFight=(function(){
+  let level=1, st;
+  function start(lvl){
+    level=lvl||1;
+    show('game');
+    document.getElementById('meter').classList.add('show');
+    banner.textContent = "MONKEY FIGHT — the gremlins of 'you're too much'";
+    help.innerHTML = isTouch
+      ? "◀ ▶ move · ● punch. clear the monkeys."
+      : "← → move · X / Enter = punch · clear the wave of monkeys.";
+    init();
+    showCanvasMsg("INTERLUDE — LES SINGES",
+      "Between rounds, the monkeys come: every intrusive thought that whispers <i>you're too loud, too much, impossible to love</i>. Lou punches back.",
+      "▶ fight", ()=>startLoop(frame));
+  }
+  function init(){
+    st={
+      lou:{x:W/2,facing:1,punch:0,run:0},
+      monkeys:[], spawn:0, killed:0, target: level===1?8:11,
+      hp:3, over:false, win:false, t:0, hurtCD:0,
+    };
+  }
+  function spawnMonkey(){
+    const fromLeft=Math.random()<.5;
+    st.monkeys.push({
+      x: fromLeft? -30 : W+30, y:300+Math.random()*20-10,
+      dir: fromLeft?1:-1, spd:1+Math.random()*1.2+level*0.2,
+      bob:Math.random()*6, alive:true, hitFlash:0,
+    });
+  }
+  function frame(){
+    const s=st; s.t++;
+    ctx2.clearRect(0,0,W,H);
+    // bg
+    const g=ctx2.createLinearGradient(0,0,0,H);
+    g.addColorStop(0,'#2a1620');g.addColorStop(1,'#1a1018');
+    ctx2.fillStyle=g;ctx2.fillRect(0,0,W,H);
+    ctx2.fillStyle='#140d14';ctx2.fillRect(0,340,W,H-340);
+
+    if(!s.over){
+      // spawning
+      s.spawn--;
+      if(s.spawn<=0 && (s.killed+s.monkeys.filter(m=>m.alive).length)<s.target){
+        spawnMonkey(); s.spawn=70-level*8 - Math.random()*20;
+      }
+      // movement
+      const L=s.lou;
+      if(input.left){ L.x-=4.5; L.facing=-1; }
+      if(input.right){ L.x+=4.5; L.facing=1; }
+      L.x=Math.max(30,Math.min(W-30,L.x));
+      L.run += (input.left||input.right)?0.2:0;
+      if(s.hurtCD>0)s.hurtCD--;
+      // punch
+      if(input.actEdge && L.punch<=0){ L.punch=12; Audio.hit();
+        for(const m of s.monkeys){
+          if(!m.alive)continue;
+          const inFront = (L.facing>0 && m.x>L.x && m.x<L.x+70) || (L.facing<0 && m.x<L.x && m.x>L.x-70);
+          if(inFront && Math.abs(m.y-300)<40){ m.alive=false; m.hitFlash=14; s.killed++; Audio.blip(300,.08,'square',.06);
+            bump(0.6);
+          }
+        }
+      }
+      if(L.punch>0)L.punch--;
+
+      // monkeys approach
+      for(const m of s.monkeys){
+        if(!m.alive){ m.hitFlash--; continue; }
+        m.x += m.dir*m.spd; m.bob+=0.2;
+        if(Math.abs(m.x-L.x)<26 && s.hurtCD<=0){
+          s.hp--; s.hurtCD=50; Audio.bad();
+          m.alive=false; m.hitFlash=10;
+          if(s.hp<=0){ s.over=true; s.win=false; endFight(); }
+        }
+      }
+      s.monkeys=s.monkeys.filter(m=>m.alive||m.hitFlash>0);
+      if(s.killed>=s.target){ s.over=true; s.win=true; endFight(); }
+    }
+
+    // ground line
+    ctx2.strokeStyle='rgba(224,163,163,.3)';ctx2.beginPath();ctx2.moveTo(0,340);ctx2.lineTo(W,340);ctx2.stroke();
+
+    // monkeys
+    for(const m of s.monkeys){
+      ctx2.save();ctx2.translate(m.x, m.y+Math.sin(m.bob)*4);
+      if(m.hitFlash>0){ ctx2.globalAlpha=Math.max(0,m.hitFlash/14); ctx2.fillStyle='#fff';
+        ctx2.font='22px serif';ctx2.fillText('💥',-10,0);ctx2.restore();continue;}
+      ctx2.font='30px serif';ctx2.fillText('🐒',-16,8);
+      ctx2.restore();
+    }
+    // Lou (fighter)
+    drawFighter(s.lou.x,300,s.lou.facing,s.lou.punch>6, s.hurtCD>40);
+
+    // hud
+    ctx2.fillStyle='#f4ead5';ctx2.font='14px Courier New';
+    ctx2.fillText("monkeys cleared: "+s.killed+" / "+s.target, 16,26);
+    ctx2.fillText("❤".repeat(Math.max(0,s.hp))+"·".repeat(3-Math.max(0,s.hp)), W-70,26);
+  }
+  function drawFighter(x,y,facing,punching,hurt){
+    ctx2.save();ctx2.translate(x,y);ctx2.scale(facing,1);
+    if(hurt && Math.floor(performance.now()/100)%2) ctx2.globalAlpha=.5;
+    ctx2.fillStyle='#23202b';ctx2.fillRect(-7,26,6,14);ctx2.fillRect(2,26,6,14);
+    ctx2.fillStyle='#d8693b';ctx2.fillRect(-9,8,18,20);
+    ctx2.fillStyle='#f0d7c2';ctx2.fillRect(-7,-6,14,15);
+    ctx2.fillStyle='#6b2d1a';ctx2.fillRect(-8,-9,16,7);
+    // punching arm
+    ctx2.fillStyle='#d8693b';
+    if(punching){ ctx2.fillRect(8,10,24,7); ctx2.fillStyle='#f0d7c2';ctx2.fillRect(30,9,9,9);}
+    else { ctx2.fillRect(6,12,6,16); }
+    ctx2.restore();
+  }
+  function endFight(){
+    stopLoop();
+    const win=st.win;
+    if(win){bump(6);Audio.good();}else{bump(-3);Audio.bad();}
+    setTimeout(()=>{
+      // routing: after fight 1 -> chapter 2; after fight 2 -> chapter 4
+      const cont = level===1? ()=>story.go('c2') : ()=>story.go('c4');
+      showCanvasMsg(
+        win?"The monkeys scatter.":"The monkeys win this round.",
+        win? "The voices quiet — for now. Elias texts: <span style='color:#5b7fa6'>\"you ok? brought you water (metaphorically).\"</span>"
+           : "She's overwhelmed. But Elias stays on the line anyway. That's the whole point.",
+        "continue the story ▸",
+        cont
+      );
+    },700);
+  }
+  return {start};
+})();
+
+/* ============================================================
+   FINAL — THE PHONE CALL  + endings
+   ============================================================ */
+const PhoneCall=(function(){
+  let waited=0, timer=null, monoTimer=null;
+  const monologues=[
+    "Lou: \"What if his real voice changes everything?\"",
+    "Elias: \"What if I disappoint her in person?\"",
+    "Lou: \"I could let it ring. Stay safe. Stay alone.\"",
+    "Elias: \"Pick up. Please. Or don't. But I'll still be here.\"",
+    "Lou: \"…okay. okay. breathe.\"",
+  ];
+  function start(){
+    show('vn');
+    document.getElementById('meter').classList.remove('show');
+    // build call UI inside vn screen
+    const vn=document.getElementById('vn');
+    vn.innerHTML='';
+    const c=document.createElement('div');
+    c.id='callscreen';c.className='center-msg';c.style.background='#05040a';
+    c.innerHTML=`
+      <div class="call-ring">📞</div>
+      <div class="call-name">Elias is calling…</div>
+      <div class="call-sub">pixel stars drift. lo-fi hums. the screen is almost black.</div>
+      <div class="call-monologue" id="mono">${monologues[0]}</div>
+      <div class="call-btns"><button class="call-btn answer" id="answer">📞</button></div>
+      <p style="margin-top:14px;color:#5b7fa6;font-size:11px">(you can wait. the longer you wait, the more she thinks.)</p>`;
+    vn.appendChild(c);
+    Audio.ring();
+    timer=setInterval(()=>{Audio.ring();},2600);
+    let mi=0;
+    monoTimer=setInterval(()=>{ mi=(mi+1); waited++; if(mi<monologues.length){ document.getElementById('mono').textContent=monologues[mi]; } },2600);
+    document.getElementById('answer').onclick=answer;
+  }
+  function answer(){
+    clearInterval(timer);clearInterval(monoTimer);Audio.ui();
+    const vn=document.getElementById('vn');
+    vn.innerHTML=`<div class="center-msg" style="background:#070510">
+      <div style="font-size:60px">🌌</div>
+      <h2 class="elias">"mon petit singe."</h2>
+      <p>He still doesn't fully know what the phrase means. But he knows it belongs to her.</p>
+      <button class="start-btn" id="toEnd">…</button></div>`;
+    setBlend(1);
+    document.getElementById('toEnd').textContent="see how it ends ▸";
+    document.getElementById('toEnd').onclick=ending;
+  }
+  function ending(){
+    Audio.ui();
+    const vn=document.getElementById('vn');
+    let title,emoji,body,bg,cls;
+    if(S.connection>=72){
+      title="ENSEMBLE À STOCKHOLM 🔥"; emoji="🔥"; cls="lou";
+      bg="linear-gradient(160deg,#3a1f1a,#1a2535)";
+      body="The hopeful ending. Lou learned silence is not abandonment. Elias learned emotion is not irrationality. They're still wildly different — but now they know how to <b>return to each other</b>.<br><br><i>Final image: the two of them assembling IKEA furniture, arguing lovingly about the instructions.</i>";
+    } else if(S.connection>=40){
+      title="STILL FIGURING IT OUT ❄"; emoji="❄"; cls="elias";
+      bg="linear-gradient(160deg,#1a2535,#2a1d2e)";
+      body="The realistic ending. They love each other deeply — but imperfectly. Sometimes they fail each other. Sometimes they misunderstand completely. But they keep trying.<br><br><i>The final scene isn't dramatic. Just: another phone call. Another night. Another attempt.</i>";
+    } else {
+      title="WE BURNED BEAUTIFULLY 🥀"; emoji="🥀"; cls="narr";
+      bg="linear-gradient(160deg,#241a2e,#0d0b12)";
+      body="The bittersweet ending. They loved each other intensely, but timing and emotional incompatibility won. Years later, certain songs still hurt. Certain Discord notification sounds still feel dangerous.<br><br><b>\"Some people arrive in your life like unfinished songs.\"</b>";
+    }
+    vn.innerHTML=`<div class="center-msg" style="background:${bg}">
+      <div style="font-size:70px">${emoji}</div>
+      <h2 class="${cls}">${title}</h2>
+      <p style="max-width:560px">${body}</p>
+      <p style="color:#b8b0cf;font-size:12px;margin-top:6px">connection ${Math.round(S.connection)}/100 · quiz ${S.flags.quiz}/4 · messages deleted ${S.flags.deleted}${S.flags.vodUnlocked?' · 🐈‍⬛ VOD found':''}</p>
+      <button class="start-btn" id="roll">roll credits ▸</button>
+    </div>`;
+    document.getElementById('roll').onclick=credits;
+  }
+  function credits(){
+    Audio.ui();
+    const vn=document.getElementById('vn');
+    vn.innerHTML=`<div id="credits" class="center-msg" style="background:#070510">
+      <div class="credit-roll">
+        <h2 style="color:#f2c14e">WHEN YOU CALL ME, SINGE</h2><br>
+        a bilingual interactive love story<br><br>
+        <b class="lou">LOU</b> — emotionally loud, terrified of being too much<br>
+        <b class="elias">ELIAS</b> — emotionally quiet, terrified of being insufficient<br>
+        <b>BAUDELAIRE</b> — the cat, asleep<br><br>
+        ❝ What if love is not perfect understanding?<br>What if it is patient translation? ❞<br><br>
+        not soulmates. not destiny. not fixing each other.<br>
+        just: being witnessed.<br><br>
+        merci · tack · thank you for staying.<br><br>
+        ♪ the music player is still playing.
+      </div></div>`;
+    // final fake twitch sub notification
+    setTimeout(()=>{
+      const n=document.createElement('div');
+      n.className='sub-notif';
+      n.innerHTML=`<b>EliasNordicBlue</b> subscribed for 36 months.<br><span>"still here."</span>`;
+      document.body.appendChild(n);
+      requestAnimationFrame(()=>n.classList.add('show'));
+      Audio.good();
+    },9000);
+  }
+  return {start};
+})();
+
+/* init meter width */
+document.getElementById('meterfill').style.width=S.connection+'%';
+setBlend(0.5);
+</script>
+</body>
+</html>
