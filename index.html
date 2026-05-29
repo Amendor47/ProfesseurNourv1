@@ -324,8 +324,8 @@ const isTouch = ('ontouchstart' in window)||navigator.maxTouchPoints>0;
   };
   setTimeout(tick,500);
 
-  document.getElementById('startbtn').addEventListener('click',()=>{ Audio.start(); story.go('c1'); });
-  document.getElementById('musicwidget').addEventListener('click',Audio.toggle);
+  document.getElementById('startbtn').addEventListener('click',()=>{ Sound.start(); story.go('c1'); });
+  document.getElementById('musicwidget').addEventListener('click',()=>Sound.toggle());
 
   // Baudelaire the cat -> hidden VOD
   document.getElementById('baudelaire').addEventListener('click',()=>{
@@ -341,7 +341,7 @@ const isTouch = ('ontouchstart' in window)||navigator.maxTouchPoints>0;
 /* ============================================================
    TINY WEBAUDIO SOUND ENGINE (lo-fi blips, no assets)
    ============================================================ */
-const Audio = (function(){
+const Sound = (function(){
   let ctx=null, musicOn=false, musicTimer=null;
   function ac(){ if(!ctx) ctx=new (window.AudioContext||window.webkitAudioContext)(); return ctx; }
   function blip(freq=440,dur=.08,type='square',gain=.05){
@@ -435,7 +435,7 @@ const story = (function(){
         $txt.textContent = plain.replace(/<[^>]+>/g,'').slice(0,idx);
       }
     },14);
-    Audio.ui();
+    Sound.ui();
   }
   function showChoices(node){
     if(node.choices){
@@ -443,12 +443,12 @@ const story = (function(){
         const b=document.createElement('button');
         b.className='choice'+(c.cold?' cold':'');
         b.textContent=c.label;
-        b.onclick=()=>{ Audio.ui(); if(c.effect)c.effect(); go(c.to); };
+        b.onclick=()=>{ Sound.ui(); if(c.effect)c.effect(); go(c.to); };
         $ch.appendChild(b);
       });
     } else {
       $next.style.display='block';
-      $next.onclick=()=>{ Audio.ui(); go(node.next); };
+      $next.onclick=()=>{ Sound.ui(); go(node.next); };
     }
   }
   $next.onclick=()=>{};
@@ -600,7 +600,7 @@ const quiz = (function(){
       text:node.q,
       choices:node.a.map(opt=>({
         label:opt[0],
-        effect:()=>{ if(opt[1]>0){Audio.good();S.flags.quiz++;bump(opt[1]);} else {Audio.bad();bump(-1);} },
+        effect:()=>{ if(opt[1]>0){Sound.good();S.flags.quiz++;bump(opt[1]);} else {Sound.bad();bump(-1);} },
         to:()=>{ i++; setTimeout(ask,260); }
       }))
     });
@@ -644,7 +644,7 @@ const TextGame=(function(){
       choices:b.opt.map(o=>({
         label:o[0],
         cold:o[1]>0,
-        effect:()=>{ if(o[1]>0){Audio.good();if(o[0].startsWith('delete'))S.flags.deleted++;}else Audio.bad(); bump(o[1]); },
+        effect:()=>{ if(o[1]>0){Sound.good();if(o[0].startsWith('delete'))S.flags.deleted++;}else Sound.bad(); bump(o[1]); },
         to:()=>{ i++; setTimeout(beat,260); }
       }))
     });
@@ -696,7 +696,7 @@ function showCanvasMsg(title,sub,btnLabel,cb){
   div.className='center-msg';
   div.innerHTML=`<h2>${title}</h2><p>${sub}</p>`;
   const b=document.createElement('button');b.className='start-btn';b.textContent=btnLabel;
-  b.onclick=()=>{Audio.ui();div.remove();cb();};
+  b.onclick=()=>{Sound.ui();div.remove();cb();};
   div.appendChild(b);
   document.getElementById('game-wrap').appendChild(div);
 }
@@ -781,7 +781,7 @@ const RunnerGame=(function(){
 
       // physics
       const L=s.lou;
-      if(input.jumpEdge && L.onGround){ L.vy=-12; L.onGround=false; Audio.blip(520,.07,'square',.05); }
+      if(input.jumpEdge && L.onGround){ L.vy=-12; L.onGround=false; Sound.blip(520,.07,'square',.05); }
       L.vy+=0.6; L.y+=L.vy;
       if(L.y>=300){ L.y=300; L.vy=0; L.onGround=true; }
 
@@ -791,9 +791,9 @@ const RunnerGame=(function(){
         if(!o.hit && screenX<150 && screenX>90){
           // must be jumping
           if(L.onGround && L.y>290){
-            o.hit=true; s.speed=Math.max(2.4,s.speed-1.4); s.slipped++; Audio.bad();
+            o.hit=true; s.speed=Math.max(2.4,s.speed-1.4); s.slipped++; Sound.bad();
             banner.textContent = level===1? "tripped on a cable!" : "slipped on the ice!";
-          } else { o.hit=true; s.speed=Math.min(s.baseSpeed+0.6,s.speed+0.2); Audio.blip(700,.05,'square',.04);}
+          } else { o.hit=true; s.speed=Math.min(s.baseSpeed+0.6,s.speed+0.2); Sound.blip(700,.05,'square',.04);}
         }
       }
       // recover speed slowly
@@ -838,8 +838,8 @@ const RunnerGame=(function(){
   }
   function finishRace(won){
     stopLoop();
-    if(won){ bump(8); Audio.good(); }
-    else { bump(-4); Audio.bad(); }
+    if(won){ bump(8); Sound.good(); }
+    else { bump(-4); Sound.bad(); }
     setTimeout(()=>{
       showCanvasMsg(
         won? (level===1?"Lou wins. Elias has to admit it first.":"She beats him across the lake."):
@@ -912,11 +912,11 @@ const MonkeyFight=(function(){
       L.run += (input.left||input.right)?0.2:0;
       if(s.hurtCD>0)s.hurtCD--;
       // punch
-      if(input.actEdge && L.punch<=0){ L.punch=12; Audio.hit();
+      if(input.actEdge && L.punch<=0){ L.punch=12; Sound.hit();
         for(const m of s.monkeys){
           if(!m.alive)continue;
           const inFront = (L.facing>0 && m.x>L.x && m.x<L.x+70) || (L.facing<0 && m.x<L.x && m.x>L.x-70);
-          if(inFront && Math.abs(m.y-300)<40){ m.alive=false; m.hitFlash=14; s.killed++; Audio.blip(300,.08,'square',.06);
+          if(inFront && Math.abs(m.y-300)<40){ m.alive=false; m.hitFlash=14; s.killed++; Sound.blip(300,.08,'square',.06);
             bump(0.6);
           }
         }
@@ -928,7 +928,7 @@ const MonkeyFight=(function(){
         if(!m.alive){ m.hitFlash--; continue; }
         m.x += m.dir*m.spd; m.bob+=0.2;
         if(Math.abs(m.x-L.x)<26 && s.hurtCD<=0){
-          s.hp--; s.hurtCD=50; Audio.bad();
+          s.hp--; s.hurtCD=50; Sound.bad();
           m.alive=false; m.hitFlash=10;
           if(s.hp<=0){ s.over=true; s.win=false; endFight(); }
         }
@@ -972,7 +972,7 @@ const MonkeyFight=(function(){
   function endFight(){
     stopLoop();
     const win=st.win;
-    if(win){bump(6);Audio.good();}else{bump(-3);Audio.bad();}
+    if(win){bump(6);Sound.good();}else{bump(-3);Sound.bad();}
     setTimeout(()=>{
       // routing: after fight 1 -> chapter 2; after fight 2 -> chapter 4
       const cont = level===1? ()=>story.go('c2') : ()=>story.go('c4');
@@ -1016,14 +1016,14 @@ const PhoneCall=(function(){
       <div class="call-btns"><button class="call-btn answer" id="answer">📞</button></div>
       <p style="margin-top:14px;color:#5b7fa6;font-size:11px">(you can wait. the longer you wait, the more she thinks.)</p>`;
     vn.appendChild(c);
-    Audio.ring();
-    timer=setInterval(()=>{Audio.ring();},2600);
+    Sound.ring();
+    timer=setInterval(()=>{Sound.ring();},2600);
     let mi=0;
     monoTimer=setInterval(()=>{ mi=(mi+1); waited++; if(mi<monologues.length){ document.getElementById('mono').textContent=monologues[mi]; } },2600);
     document.getElementById('answer').onclick=answer;
   }
   function answer(){
-    clearInterval(timer);clearInterval(monoTimer);Audio.ui();
+    clearInterval(timer);clearInterval(monoTimer);Sound.ui();
     const vn=document.getElementById('vn');
     vn.innerHTML=`<div class="center-msg" style="background:#070510">
       <div style="font-size:60px">🌌</div>
@@ -1035,7 +1035,7 @@ const PhoneCall=(function(){
     document.getElementById('toEnd').onclick=ending;
   }
   function ending(){
-    Audio.ui();
+    Sound.ui();
     const vn=document.getElementById('vn');
     let title,emoji,body,bg,cls;
     if(S.connection>=72){
@@ -1061,7 +1061,7 @@ const PhoneCall=(function(){
     document.getElementById('roll').onclick=credits;
   }
   function credits(){
-    Audio.ui();
+    Sound.ui();
     const vn=document.getElementById('vn');
     vn.innerHTML=`<div id="credits" class="center-msg" style="background:#070510">
       <div class="credit-roll">
@@ -1083,7 +1083,7 @@ const PhoneCall=(function(){
       n.innerHTML=`<b>EliasNordicBlue</b> subscribed for 36 months.<br><span>"still here."</span>`;
       document.body.appendChild(n);
       requestAnimationFrame(()=>n.classList.add('show'));
-      Audio.good();
+      Sound.good();
     },9000);
   }
   return {start};
