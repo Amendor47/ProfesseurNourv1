@@ -1,0 +1,16 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">
+<link rel="stylesheet" href="preview.css">
+<style>
+  .word{ font-family:var(--mono); font-weight:700; letter-spacing:-1px; line-height:.96;
+    font-size:46px; background:linear-gradient(100deg,#d8693b,#f2c14e 36%,#cdd6dd 58%,#6e93bd);
+    -webkit-background-clip:text; background-clip:text; color:transparent;
+    text-shadow:0 0 40px rgba(242,193,78,.06); }
+  .cur{ -webkit-text-fill-color:#f2c14e; color:#f2c14e; animation:blink 1.05s steps(1) infinite; }
+  @keyframes blink{ 50%{opacity:0;} }
+  .spec{ font-family:var(--mono); font-size:10px; color:var(--muted); letter-spacing:1px; margin-top:14px; }
+</style></head>
+<body><div class="card-inner">
+  <div class="lbl" style="margin-bottom:14px;">Display — JetBrains Mono 700, gradient-clipped wordmark</div>
+  <div class="word">WHEN YOU CALL<br>ME, SINGE<span class="cur">_</span></div>
+  <div class="spec">clamp(34&ndash;84px) · tracking &minus;1px · warm&rarr;cold clip · blinking cursor</div>
+</div></body></html>

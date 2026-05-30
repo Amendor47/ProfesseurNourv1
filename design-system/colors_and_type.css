@@ -1,0 +1,139 @@
+/* ============================================================================
+   WHEN YOU CALL ME, SINGE — Design Tokens
+   Colors + Typography foundation for the bilingual interactive love story.
+
+   Two climates, one blend: Lou is WARM (orange/amber/pink), Elias is COLD
+   (nordic-blue/snow/lavender). Everything sits on near-black "paper". The
+   palette literally bleeds warm into cold only as far as the connexion allows.
+
+   Fonts are Google Fonts — load them once per document with:
+   <link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400;1,6..72,500&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
+   ============================================================================ */
+
+@import url('https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400;1,6..72,500&family=JetBrains+Mono:wght@400;500;700&display=swap');
+
+:root{
+  /* ---------- WARM · Lou (the streamer) ------------------------------------ */
+  --burnt-orange:#d8693b;   /* primary warm accent — her temper, her glow      */
+  --amber:#f2c14e;          /* signature highlight — the "little lamp"          */
+  --dusty-pink:#e0a3a3;     /* French register, softness                        */
+  --cream:#f4ead5;          /* warm white — headings, emphasis                  */
+  /* in-engine warm (the canvas build): hot pink hoodie + gold                  */
+  --hoodie-pink:#E87D9A;
+  --gold:#F5D03B;
+
+  /* ---------- COLD · Elias (the lurker) ------------------------------------ */
+  --nordic-blue:#6e93bd;    /* primary cold accent — Swedish winter             */
+  --snow-gray:#cdd6dd;      /* cold neutral light                               */
+  --lavender:#b8b0cf;       /* Swedish register, quiet                          */
+
+  /* ---------- BASE · near-black "paper" ------------------------------------ */
+  --paper:#0d0b12;          /* page background — warmth fights this dark         */
+  --paper-2:#14101a;        /* raised surface — cards, pillars                  */
+  --ink:#2b2533;            /* deepest panel / button-on-light text             */
+  --night:#08070c;          /* the game canvas void                             */
+
+  /* ---------- TEXT --------------------------------------------------------- */
+  --body:#e3d6bf;           /* default body copy (warm bone)                    */
+  --muted:#9a8f9b;          /* secondary / captions / system labels             */
+  --line:rgba(205,214,221,.14);  /* hairline border / divider                  */
+
+  /* ---------- SEMANTIC roles ---------------------------------------------- */
+  --bg:var(--paper);
+  --surface:var(--paper-2);
+  --accent:var(--amber);          /* the one ration of brightness             */
+  --accent-warm:var(--burnt-orange);
+  --accent-cold:var(--nordic-blue);
+  --fg:var(--body);
+  --fg-strong:var(--cream);
+  --fg-muted:var(--muted);
+  --fr:var(--dusty-pink);         /* text in French register                  */
+  --sv:var(--lavender);           /* text in Swedish register                 */
+
+  /* ---------- meter / connexion gradients --------------------------------- */
+  --grad-blend:linear-gradient(100deg,var(--burnt-orange),var(--amber) 36%,var(--snow-gray) 58%,var(--nordic-blue));
+  --grad-warm:linear-gradient(90deg,var(--burnt-orange),var(--amber));
+  --grad-cold:linear-gradient(90deg,var(--nordic-blue),var(--lavender));
+  --grad-spine:linear-gradient(180deg,var(--burnt-orange),var(--amber) 30%,var(--lavender) 60%,var(--nordic-blue));
+
+  /* ---------- ambient room glow (warm top-left, cold bottom-right) -------- */
+  --glow-room:
+    radial-gradient(60vw 60vw at 12% 6%, rgba(216,105,59,.14), transparent 60%),
+    radial-gradient(60vw 60vw at 88% 96%, rgba(110,147,189,.16), transparent 60%),
+    var(--paper);
+
+  /* ---------- TYPE families ----------------------------------------------- */
+  --serif:"Newsreader",Georgia,"Times New Roman",serif;   /* narration, love letter */
+  --mono:"JetBrains Mono",ui-monospace,"SF Mono",monospace;/* HUD, chat, system     */
+  --game:"Trebuchet MS","Segoe UI",system-ui,sans-serif;   /* in-engine canvas text */
+
+  /* ---------- TYPE scale (from the GDD) ----------------------------------- */
+  --fs-display:clamp(34px,8.4vw,84px); /* bigtitle — mono 700, gradient clip   */
+  --fs-h1:clamp(30px,5.2vw,46px);
+  --fs-h2:clamp(28px,4.4vw,40px);
+  --fs-h3:23px;
+  --fs-h4:18px;
+  --fs-lede:22px;
+  --fs-body:19px;
+  --fs-sub:17px;
+  --fs-small:15px;
+  --fs-kicker:12px;
+  --fs-label:10.5px;
+  --fs-mono-hud:11px;
+
+  --lh-tight:1.08;
+  --lh-snug:1.25;
+  --lh-body:1.72;
+
+  /* ---------- radii / elevation ------------------------------------------- */
+  --r-sm:8px;
+  --r-md:14px;     /* default card radius                                     */
+  --r-lg:16px;     /* monitor / large frame                                   */
+  --r-pill:20px;   /* chips                                                   */
+  --shadow-frame:0 30px 90px rgba(0,0,0,.55);
+  --shadow-lift:0 10px 28px rgba(242,193,78,.22);
+  --glow-amber:0 0 40px rgba(242,193,78,.06);
+
+  --ease:cubic-bezier(.22,.61,.36,1);
+  --dur:.7s;
+}
+
+/* ============================================================================
+   BASE ELEMENT STYLES — opt-in by wrapping content in .wycm
+   ============================================================================ */
+.wycm{
+  background:var(--paper);
+  color:var(--body);
+  font-family:var(--serif);
+  font-size:var(--fs-body);
+  line-height:var(--lh-body);
+  -webkit-font-smoothing:antialiased;
+}
+
+.wycm h1{ font-family:var(--mono); font-weight:700; font-size:var(--fs-h1);
+  line-height:var(--lh-tight); letter-spacing:-.5px; color:var(--cream); }
+.wycm h2{ font-size:var(--fs-h2); line-height:var(--lh-tight); font-weight:600;
+  color:var(--cream); letter-spacing:-.5px; text-wrap:balance; }
+.wycm h3{ font-size:var(--fs-h3); font-weight:600; color:var(--cream); letter-spacing:-.2px; }
+.wycm h4{ font-size:var(--fs-h4); font-weight:600; color:var(--cream); }
+.wycm p{ margin-bottom:18px; text-wrap:pretty; }
+.wycm p.lede{ font-size:var(--fs-lede); line-height:1.6; color:#efe3cc; }
+.wycm em{ color:var(--cream); font-style:italic; }
+.wycm .fr{ color:var(--fr); font-style:italic; }   /* French register */
+.wycm .sv{ color:var(--sv); font-style:italic; }   /* Swedish register */
+
+/* kicker / eyebrow — mono, uppercase, amber, wide tracking */
+.kicker{ font-family:var(--mono); font-size:var(--fs-kicker); letter-spacing:3px;
+  text-transform:uppercase; color:var(--amber); }
+.kicker.cold{ color:var(--nordic-blue); }
+
+/* monospace utility */
+.mono{ font-family:var(--mono); }
+
+/* the gradient wordmark — warm→cold blend clipped to text */
+.wordmark{ font-family:var(--mono); font-weight:700; letter-spacing:-1px;
+  line-height:.98; background:var(--grad-blend);
+  -webkit-background-clip:text; background-clip:text; color:transparent;
+  text-shadow:var(--glow-amber); }
+
+::selection{ background:var(--burnt-orange); color:#fff; }

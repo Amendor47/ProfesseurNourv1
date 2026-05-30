@@ -1,0 +1,78 @@
+/* When You Call Me, Singe — UI kit shell.
+   The "monitor" the whole game lives inside: warm/cold glow, scanlines,
+   vignette, flicker. Reuses the design tokens. */
+@import url('../../colors_and_type.css');
+
+*{ margin:0; padding:0; box-sizing:border-box; }
+html,body{ height:100%; }
+body{
+  background:#050409;
+  font-family:var(--game);
+  color:var(--body);
+  display:flex; align-items:center; justify-content:center;
+  min-height:100vh; padding:28px;
+  background-image:
+    radial-gradient(70vw 70vw at 50% -20%, rgba(216,105,59,.07), transparent 60%),
+    radial-gradient(70vw 70vw at 50% 120%, rgba(110,147,189,.08), transparent 60%);
+}
+
+/* the monitor bezel */
+.monitor{
+  width:900px; max-width:100%;
+  border-radius:18px;
+  padding:14px;
+  background:linear-gradient(180deg,#1b1620,#0f0c14);
+  box-shadow:0 30px 90px rgba(0,0,0,.6), inset 0 1px 0 rgba(255,255,255,.05);
+  border:1px solid rgba(255,255,255,.06);
+}
+.bezel-top{ display:flex; align-items:center; gap:8px; padding:2px 6px 11px; }
+.bezel-top .dot{ width:9px; height:9px; border-radius:50%; }
+.bezel-top .led{ background:var(--burnt-orange); box-shadow:0 0 8px var(--burnt-orange); }
+.bezel-top .name{ margin-left:auto; font-family:var(--mono); font-size:10px; letter-spacing:2px;
+  text-transform:uppercase; color:var(--muted); }
+
+/* the screen — fixed 900x500 game surface, scaled by JS if needed */
+.screen{
+  position:relative; width:100%; aspect-ratio:900/500; overflow:hidden;
+  border-radius:10px; background:#08070c;
+  isolation:isolate;
+}
+/* CRT overlays live above content but below pointer */
+.screen::before{ content:""; position:absolute; inset:0; z-index:40; pointer-events:none;
+  background:repeating-linear-gradient(0deg, rgba(0,0,0,.16) 0 1px, transparent 1px 3px);
+  mix-blend-mode:multiply; animation:flick 7s infinite; }
+.screen::after{ content:""; position:absolute; inset:0; z-index:41; pointer-events:none;
+  background:radial-gradient(130% 130% at 50% 50%, transparent 52%, rgba(0,0,0,.6)); }
+@keyframes flick{ 0%,100%{opacity:.9;} 47%{opacity:.74;} 52%{opacity:.82;} }
+
+/* generic centered scene */
+.scene{ position:absolute; inset:0; z-index:1; }
+
+/* tab rail under the monitor */
+.rail{ display:flex; gap:6px; justify-content:center; margin-top:16px; flex-wrap:wrap; }
+.rail button{
+  font-family:var(--mono); font-size:10px; letter-spacing:1.5px; text-transform:uppercase;
+  padding:8px 13px; border-radius:8px; cursor:pointer; transition:.18s var(--ease);
+  background:transparent; border:1px solid var(--line); color:var(--muted);
+}
+.rail button:hover{ color:var(--cream); border-color:rgba(242,193,78,.5); }
+.rail button.on{ background:var(--amber); border-color:var(--amber); color:var(--ink); }
+.caption{ text-align:center; margin-top:10px; font-family:var(--serif); font-style:italic;
+  font-size:13px; color:var(--muted); }
+
+/* runner cycle */
+@keyframes runlegs{ 0%{ transform:rotate(22deg);} 100%{ transform:rotate(-22deg);} }
+@keyframes runlegs2{ 0%{ transform:rotate(-22deg);} 100%{ transform:rotate(22deg);} }
+@keyframes runarm{ 0%{ transform:rotate(-30deg);} 100%{ transform:rotate(30deg);} }
+@keyframes bob{ 0%,100%{ transform:translateY(0);} 50%{ transform:translateY(-3px);} }
+@keyframes blinkcur{ 50%{ opacity:0; } }
+@keyframes fadeup{ from{ opacity:0; transform:translateY(12px);} to{ opacity:1; transform:none; } }
+
+/* in-engine button used across screens */
+.gbtn{ font-family:var(--game); font-weight:700; letter-spacing:.5px; cursor:pointer;
+  background:rgba(232,125,154,.18); border:2px solid var(--gold); color:#fff;
+  border-radius:12px; padding:11px 26px; font-size:15px; transition:.15s var(--ease); }
+.gbtn:hover{ background:rgba(232,125,154,.34); box-shadow:0 0 22px rgba(245,208,59,.28); }
+.gbtn:active{ transform:translateY(1px); }
+.gbtn.locked{ border-color:#555; color:#888; background:rgba(255,255,255,.04); cursor:default; }
+.gbtn.locked:hover{ box-shadow:none; background:rgba(255,255,255,.04); }

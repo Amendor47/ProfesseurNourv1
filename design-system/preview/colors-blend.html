@@ -1,0 +1,21 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">
+<link rel="stylesheet" href="preview.css">
+<style>
+  .bar{ height:30px; border-radius:8px; border:1px solid rgba(255,255,255,.1); }
+  .cap{ font-family:var(--mono); font-size:10px; letter-spacing:1px; color:var(--muted);
+    text-transform:uppercase; margin-bottom:6px; }
+  .blend{ background:linear-gradient(100deg,#d8693b,#f2c14e 36%,#cdd6dd 58%,#6e93bd); }
+  .warm{ background:linear-gradient(90deg,#d8693b,#f2c14e); }
+  .cold{ background:linear-gradient(90deg,#6e93bd,#b8b0cf); }
+  .stack > div + div{ margin-top:13px; }
+</style></head>
+<body><div class="card-inner">
+  <div class="lbl" style="margin-bottom:12px;">Gradients — reserved for meaning, never decoration</div>
+  <div class="stack">
+    <div><div class="cap">connexion blend &mdash; warm bleeds into cold</div><div class="bar blend"></div></div>
+    <div class="row" style="gap:14px;">
+      <div style="flex:1"><div class="cap" style="color:var(--burnt-orange)">▲ audience</div><div class="bar warm"></div></div>
+      <div style="flex:1"><div class="cap" style="color:var(--nordic-blue)">▼ connexion</div><div class="bar cold"></div></div>
+    </div>
+  </div>
+</div></body></html>

@@ -1,0 +1,20 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">
+<link rel="stylesheet" href="preview.css">
+<style>
+  .hud{ background:rgba(13,11,18,.6); border:1px solid var(--line); border-radius:12px;
+    padding:14px 16px; backdrop-filter:blur(4px); max-width:340px; }
+  .mrow{ display:flex; align-items:center; gap:12px; margin:9px 0; }
+  .mn{ font-family:var(--mono); font-size:11px; letter-spacing:1px; width:96px; flex:none; }
+  .mn.c{ color:var(--amber); } .mn.a{ color:var(--burnt-orange); }
+  .track{ flex:1; height:9px; border-radius:5px; background:rgba(255,255,255,.08); overflow:hidden; }
+  .track i{ display:block; height:100%; border-radius:5px; }
+  .fc{ width:34%; background:linear-gradient(90deg,#6e93bd,#f2c14e); }
+  .fa{ width:64%; background:linear-gradient(90deg,#f2c14e,#d8693b); }
+</style></head>
+<body><div class="card-inner">
+  <div class="lbl" style="margin-bottom:12px;">Dual meter HUD — connexion vs audience</div>
+  <div class="hud">
+    <div class="mrow"><span class="mn c">CONNEXION</span><span class="track"><i class="fc"></i></span></div>
+    <div class="mrow"><span class="mn a">AUDIENCE</span><span class="track"><i class="fa"></i></span></div>
+  </div>
+</div></body></html>

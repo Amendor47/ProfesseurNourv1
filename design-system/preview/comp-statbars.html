@@ -1,0 +1,32 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">
+<link rel="stylesheet" href="preview.css">
+<style>
+  .sheet{ display:flex; gap:22px; }
+  .col{ flex:1; }
+  .nm{ font-family:var(--mono); font-size:11px; letter-spacing:1px; margin-bottom:8px; }
+  .lou .nm{ color:var(--burnt-orange); } .eli .nm{ color:var(--nordic-blue); }
+  .stat{ display:flex; align-items:center; gap:9px; font-family:var(--mono); font-size:11px; margin-bottom:8px; }
+  .lbl2{ width:78px; color:var(--muted); flex:none; }
+  .bar{ flex:1; height:7px; border-radius:4px; background:rgba(255,255,255,.07); overflow:hidden; }
+  .bar i{ display:block; height:100%; border-radius:4px; }
+  .lou .bar i{ background:linear-gradient(90deg,#d8693b,#f2c14e); }
+  .eli .bar i{ background:linear-gradient(90deg,#6e93bd,#b8b0cf); }
+  .vv{ width:24px; text-align:right; color:var(--body); flex:none; }
+</style></head>
+<body><div class="card-inner">
+  <div class="lbl" style="margin-bottom:14px;">Character stat bars</div>
+  <div class="sheet">
+    <div class="col lou">
+      <div class="nm">🎧 @loupiote · live</div>
+      <div class="stat"><span class="lbl2">expressive</span><span class="bar"><i style="width:96%"></i></span><span class="vv">96</span></div>
+      <div class="stat"><span class="lbl2">temper</span><span class="bar"><i style="width:88%"></i></span><span class="vv">88</span></div>
+      <div class="stat"><span class="lbl2">invested</span><span class="bar"><i style="width:42%"></i></span><span class="vv">42</span></div>
+    </div>
+    <div class="col eli">
+      <div class="nm">🎮 EliasNordicBlue · lurking</div>
+      <div class="stat"><span class="lbl2">devotion</span><span class="bar"><i style="width:97%"></i></span><span class="vv">97</span></div>
+      <div class="stat"><span class="lbl2">patience</span><span class="bar"><i style="width:90%"></i></span><span class="vv">90</span></div>
+      <div class="stat"><span class="lbl2">reads&nbsp;Lou</span><span class="bar"><i style="width:28%"></i></span><span class="vv">28</span></div>
+    </div>
+  </div>
+</div></body></html>

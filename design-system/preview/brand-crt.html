@@ -1,0 +1,19 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">
+<link rel="stylesheet" href="preview.css">
+<style>
+  .stage{ position:relative; height:106px; border-radius:14px; overflow:hidden;
+    background:
+      radial-gradient(60% 80% at 12% 0%, rgba(216,105,59,.28), transparent 60%),
+      radial-gradient(60% 80% at 90% 100%, rgba(110,147,189,.3), transparent 60%),
+      #0d0b12; border:1px solid var(--line); }
+  .stage::after{ content:""; position:absolute; inset:0;
+    background:repeating-linear-gradient(0deg, rgba(0,0,0,.18) 0 1px, transparent 1px 3px);
+    mix-blend-mode:multiply; animation:fl 7s infinite; }
+  @keyframes fl{ 0%,100%{opacity:.85;} 50%{opacity:.62;} }
+  .vig{ position:absolute; inset:0; background:radial-gradient(120% 120% at 50% 50%, transparent 55%, rgba(0,0,0,.55)); }
+  .cap{ position:absolute; left:14px; bottom:11px; font-family:var(--mono); font-size:11px; color:#e3d6bf; letter-spacing:1px; z-index:3; }
+</style></head>
+<body><div class="card-inner">
+  <div class="lbl" style="margin-bottom:12px;">CRT motif — warm/cold glow · scanlines · vignette · flicker</div>
+  <div class="stage"><div class="vig"></div><span class="cap">warm top-left · cold bottom-right · the room is always lit by a screen</span></div>
+</div></body></html>

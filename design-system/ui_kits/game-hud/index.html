@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>When You Call Me, Singe — UI Kit</title>
+<link rel="stylesheet" href="kit.css" />
+</head>
+<body>
+<div id="root"></div>
+
+<template id="__bundler_thumbnail">
+  <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+    <rect width="100" height="100" fill="#0d0b12"/>
+    <text x="50" y="60" font-family="monospace" font-size="42" fill="#f2c14e" text-anchor="middle">♥</text>
+  </svg>
+</template>
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+<script type="text/babel" src="Sprites.jsx"></script>
+<script type="text/babel" src="HUD.jsx"></script>
+<script type="text/babel" src="Screens.jsx"></script>
+<script type="text/babel" src="PlayScene.jsx"></script>
+
+<script type="text/babel">
+const { useState } = React;
+
+/* The whole game as a small state machine you can click through. */
+function Game() {
+  const [view, setView] = useState({ state:'menu' });       // menu|select|cutscene|play|ending
+  const [chapter, setChapter] = useState(1);
+  const [ending, setEnding] = useState('honest');
+
+  let content;
+  if (view.state === 'menu')
+    content = <TitleMenu onStart={() => { setChapter(1); setView({state:'cutscene'}); }}
+                         onSelect={() => setView({state:'select'})} />;
+  else if (view.state === 'select')
+    content = <ChapterSelect unlocked={4} onBack={() => setView({state:'menu'})}
+                onPick={(i) => { setChapter(i+1); setView({state:'cutscene'}); }} />;
+  else if (view.state === 'cutscene')
+    content = <Cutscene chapter={chapter} onSkip={() => setView({state:'play'})} />;
+  else if (view.state === 'play')
+    content = <PlayScene chapter={chapter} timer="00:42" />;
+  else if (view.state === 'ending')
+    content = <Ending kind={ending} onReplay={() => setView({state:'menu'})} />;
+
+  return (
+    <div className="monitor">
+      <div className="bezel-top">
+        <span className="dot led"></span>
+        <span style={{fontFamily:'var(--mono)',fontSize:10,letterSpacing:1,color:'var(--muted)'}}>● LIVE</span>
+        <span className="name">WHEN YOU CALL ME, SINGE — UI KIT</span>
+      </div>
+      <div className="screen">{content}</div>
+
+      {/* state rail — jump to any screen */}
+      <div className="rail">
+        <button className={view.state==='menu'?'on':''} onClick={()=>setView({state:'menu'})}>Title</button>
+        <button className={view.state==='select'?'on':''} onClick={()=>setView({state:'select'})}>Select</button>
+        <button className={view.state==='cutscene'?'on':''} onClick={()=>setView({state:'cutscene'})}>Cutscene</button>
+        <button className={view.state==='play'?'on':''} onClick={()=>setView({state:'play'})}>Play</button>
+        <button className={view.state==='ending'?'on':''} onClick={()=>setView({state:'ending'})}>Ending</button>
+      </div>
+
+      {/* secondary controls: chapter + ending pickers, only where relevant */}
+      <div className="rail" style={{marginTop:8}}>
+        {(view.state==='play'||view.state==='cutscene') && [1,2,3,4].map(n =>
+          <button key={n} className={chapter===n?'on':''} onClick={()=>setChapter(n)}>Ch {n}</button>)}
+        {view.state==='ending' && ['warm','honest','cold'].map(k =>
+          <button key={k} className={ending===k?'on':''} onClick={()=>setEnding(k)}>{k}</button>)}
+      </div>
+
+      <div className="caption">
+        {view.state==='menu' && 'Title menu — click START GAME, or pick a chapter.'}
+        {view.state==='select' && 'Chapter select — four chapters, gated by progress.'}
+        {view.state==='cutscene' && 'Intro narration — click anywhere to skip into play.'}
+        {view.state==='play' && 'In-game HUD — chapter+timer, distance bar, chapter dots, connexion/audience meters.'}
+        {view.state==='ending' && 'One of three honest endings. Toggle warm / honest / cold.'}
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<Game />);
+</script>
+</body>
+</html>

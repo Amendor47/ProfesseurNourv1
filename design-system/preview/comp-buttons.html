@@ -1,0 +1,22 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">
+<link rel="stylesheet" href="preview.css">
+<style>
+  .btn{ display:inline-flex; gap:8px; align-items:center; padding:11px 20px; border-radius:9px;
+    font-family:var(--mono); font-size:12px; letter-spacing:1.5px; text-transform:uppercase;
+    text-decoration:none; cursor:pointer; transition:.2s var(--ease); }
+  .ghost{ border:1px solid var(--amber); color:var(--cream); background:transparent; }
+  .filled{ border:1px solid var(--amber); background:var(--amber); color:var(--ink);
+    transform:translateY(-2px); box-shadow:0 10px 28px rgba(242,193,78,.22); }
+  .ingame{ border:2px solid var(--gold); background:rgba(232,125,154,.22); color:#fff;
+    font-family:var(--game); font-weight:700; letter-spacing:.5px; text-transform:none; border-radius:12px; padding:12px 26px; }
+  .cap{ font-family:var(--mono); font-size:9.5px; color:var(--muted); letter-spacing:1px; margin-top:7px; }
+  .col{ display:flex; flex-direction:column; align-items:flex-start; }
+</style></head>
+<body><div class="card-inner">
+  <div class="lbl" style="margin-bottom:14px;">Buttons — ghost → fill + lift</div>
+  <div class="row" style="gap:26px; align-items:flex-start;">
+    <div class="col"><a class="btn ghost">↗ open fullscreen</a><span class="cap">default / rest</span></div>
+    <div class="col"><a class="btn filled">↗ open fullscreen</a><span class="cap">hover — fill + lift + glow</span></div>
+    <div class="col"><a class="btn ingame">PLAY</a><span class="cap">in-engine (Trebuchet, gold border)</span></div>
+  </div>
+</div></body></html>

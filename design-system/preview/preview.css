@@ -1,0 +1,23 @@
+/* Shared frame for Design System specimen cards.
+   Each card is ~700px wide; body IS the card on near-black paper. */
+@import url('../colors_and_type.css');
+
+*{ margin:0; padding:0; box-sizing:border-box; }
+html,body{ background:var(--paper); color:var(--body);
+  font-family:var(--serif); -webkit-font-smoothing:antialiased; }
+body{ padding:22px 26px; position:relative; overflow:hidden; }
+
+/* subtle room glow + scanlines on every card, like the real surfaces */
+body::before{ content:""; position:absolute; inset:0; z-index:0; pointer-events:none;
+  background:
+    radial-gradient(50vw 50vw at 6% -10%, rgba(216,105,59,.10), transparent 60%),
+    radial-gradient(50vw 50vw at 104% 110%, rgba(110,147,189,.12), transparent 60%); }
+body::after{ content:""; position:absolute; inset:0; z-index:5; pointer-events:none;
+  background:repeating-linear-gradient(0deg, rgba(0,0,0,.08) 0 1px, transparent 1px 3px);
+  mix-blend-mode:multiply; }
+.card-inner{ position:relative; z-index:2; }
+
+.lbl{ font-family:var(--mono); font-size:10px; letter-spacing:2px; text-transform:uppercase;
+  color:var(--muted); }
+.amber{ color:var(--amber); }
+.row{ display:flex; gap:14px; align-items:center; flex-wrap:wrap; }

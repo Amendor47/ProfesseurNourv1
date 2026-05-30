@@ -1,0 +1,18 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">
+<link rel="stylesheet" href="preview.css">
+<style>
+  .col{ display:flex; flex-direction:column; align-items:center; gap:9px; }
+  .b{ width:140px; height:78px; border-radius:14px; background:var(--paper-2); border:1px solid var(--line); }
+  .frame{ box-shadow:0 30px 90px rgba(0,0,0,.55); }
+  .lift{ box-shadow:0 10px 28px rgba(242,193,78,.22); border-color:rgba(242,193,78,.4); }
+  .glow{ box-shadow:0 0 40px rgba(242,193,78,.10); }
+  .t{ font-family:var(--mono); font-size:9.5px; color:var(--muted); letter-spacing:.5px; text-align:center; }
+</style></head>
+<body><div class="card-inner">
+  <div class="lbl" style="margin-bottom:16px;">Elevation — used sparingly; separation comes from surface vs paper</div>
+  <div class="row" style="gap:22px;">
+    <div class="col"><div class="b frame"></div><span class="t">frame<br>0 30 90 / .55</span></div>
+    <div class="col"><div class="b lift"></div><span class="t">hover lift<br>0 10 28 amber/.22</span></div>
+    <div class="col"><div class="b glow"></div><span class="t">amber glow<br>0 0 40 / low α</span></div>
+  </div>
+</div></body></html>
