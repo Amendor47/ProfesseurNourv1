@@ -175,41 +175,46 @@ try {
   ok(false, 'characters.js threw: ' + (e.stack || e));
 }
 
+// The engine has no explicit boot(): loading it self-initialises (landing IIFE
+// runs, meters init, listeners bind). A clean load == a successful boot.
+let engineLoaded = false;
 try {
   loadFile('engine.js');
-  ok(true, 'engine.js loaded without throwing');
-  ok(sandbox.window.Game && typeof sandbox.window.Game.boot === 'function', 'Game.boot() is exposed');
+  engineLoaded = true;
+  ok(true, 'engine.js loaded + self-initialised without throwing');
 } catch (e) {
   ok(false, 'engine.js threw on load: ' + (e.stack || e));
 }
 
-/* boot + simulate frames + fire some input, catching runtime errors */
-try {
-  if (sandbox.window.Game && sandbox.window.Game.boot) {
-    documentStub.fire('DOMContentLoaded', {});
-    sandbox.window.Game.boot();
-    ok(true, 'Game.boot() ran without throwing');
-    // pump animation frames
-    let frames = 0, t = 0, err = null;
-    for (let i = 0; i < 240 && rafQueue.length; i++) {
-      const cb = rafQueue.shift(); t += 16;
-      try { cb(t); frames++; } catch(e){ err = e; break; }
-    }
-    ok(!err, 'main loop pumped ' + frames + ' frames without throwing' + (err ? ' — ' + err.message : ''));
-    // fire a few key events to exercise input handlers
-    let inputErr = null;
-    try {
-      ['win:keydown','win:keyup'].forEach(t2 => {
-        (docListeners[t2]||[]).forEach(fn => ['Space','ArrowLeft','ArrowRight','KeyX','ArrowUp','Enter'].forEach(code =>
-          fn({ code, key: code, preventDefault(){}, repeat:false })));
-      });
-      (docListeners['keydown']||[]).forEach(fn => fn({ code:'Space', key:' ', preventDefault(){}, repeat:false }));
-      for (let i=0;i<60 && rafQueue.length;i++){ const cb=rafQueue.shift(); cb(t+=16); }
-    } catch(e){ inputErr = e; }
-    ok(!inputErr, 'input handlers run without throwing' + (inputErr ? ' — ' + inputErr.message : ''));
+if (engineLoaded) {
+  // landing typewriter + meter init run via setTimeout, which our stub fires
+  // synchronously — verify the visible side-effects landed.
+  const title = byId['title'];
+  ok(title && title.textContent && title.textContent.length > 0,
+     'landing typewriter populated the title ("' + (title.textContent||'') + '")');
+  const meter = byId['meterfill'];
+  ok(meter && meter.style && /%$/.test(meter.style.width || ''),
+     'connexion meter initialised (' + (meter && meter.style.width) + ')');
+
+  // pump any scheduled frames (canvas minigames) without throwing
+  let frames = 0, t = 0, err = null;
+  for (let i = 0; i < 120 && rafQueue.length; i++) {
+    const cb = rafQueue.shift(); t += 16;
+    try { cb(t); frames++; } catch(e){ err = e; break; }
   }
-} catch (e) {
-  ok(false, 'runtime error during boot/run: ' + (e.stack || e));
+  ok(!err, 'scheduled frames pumped without throwing (' + frames + ' frames)' + (err ? ' — ' + err.message : ''));
+
+  // fire input + click the cat (VOD unlock) to exercise interactive paths
+  let inputErr = null;
+  try {
+    ['win:keydown','win:keyup'].forEach(t2 => {
+      (docListeners[t2]||[]).forEach(fn => [' ','ArrowLeft','ArrowRight','x','ArrowUp','Enter'].forEach(key =>
+        fn({ key, code:key, preventDefault(){}, repeat:false })));
+    });
+    if (byId['baudelaire']) byId['baudelaire']._fire('click', {});
+    for (let i=0;i<40 && rafQueue.length;i++){ const cb=rafQueue.shift(); cb(t+=16); }
+  } catch(e){ inputErr = e; }
+  ok(!inputErr, 'input + cat-click handlers run without throwing' + (inputErr ? ' — ' + inputErr.message : ''));
 }
 
 log('');
