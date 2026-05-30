@@ -6,12 +6,14 @@
 > meltdown — and falls hard for a girl who never quite falls back. *Not soulmates.
 > Not destiny. Just two people deciding, night after night, whether to stay on the call.*
 
-A visual novel braided with short arcade minigames. You play **Lou / "Loupiote"**
-(a hot-tempered French-Maghrebi streamer, brown hair, short fuse) chased across
-**Bruges → Paris → Sweden** by **Elias** (tall, blond, Swedish, hopelessly in love) —
-and in the final chapter, she chases him back. A single hidden **connexion** meter,
-rendered as her warm palette bleeding into his cold one, routes the story to one of
-three honest endings.
+A **Subway-Surfers-style 3-lane endless runner**. You play **Lou / "Loupiote"**
+(a hot-tempered French-Maghrebi streamer, brown hair, short fuse) sprinting *into*
+the screen while **Elias** (tall, blond, Swedish, hopelessly in love) chases from
+behind — *"attends—"* — and closes the gap every time she stumbles. Switch lanes,
+jump and slide to dodge obstacles, collect ❤ (connexion) and ☕ (speed), and keep
+your lead. A single **connexion** meter, rendered as her warm palette bleeding into
+his cold one, decides which of three honest endings you get when he finally catches
+you. The love is uneven — the run never pretends otherwise.
 
 ## Play
 
@@ -25,14 +27,16 @@ dependencies.
   # then visit http://localhost:8000/
   ```
 
-**Controls** — `SPACE` / `↑` jump · `←` `→` move · `X` punch · or tap (on-screen pad
-on touch devices). Click the sleeping cat 🐈‍⬛ on the title for a secret chapter.
+**Controls** — `←` `→` / `A` `D` change lane · `↑` / `W` / `SPACE` jump ·
+`↓` / `S` slide · or **swipe** on touch. `SPACE` / `Enter` / tap to start and to
+run again. Obstacles tell you the verb: **▲ jump** the low ones, **▼ slide** under
+overhead bars, and **change lane** to dodge the trams.
 
 ## What's in here
 
 | Path | What it is |
 |---|---|
-| `index.html` | **The playable build** — the full game, vanilla JS on a 900×500 canvas (parallax cities, pixel Lou/Elias/monkey, WebAudio blips, `localStorage` saves). |
+| `index.html` | **The playable build** — the full game, vanilla JS on a 900×500 canvas: a pseudo-3D 3-lane endless runner (perspective road, pixel Lou & chasing Elias, ❤/☕ pickups, WebAudio blips, `localStorage` best-distance). |
 | `docs/GDD.html` | The **Game Design Document** as a CRT-styled, scroll-driven artifact (the connexion meter fills as you read). |
 | `docs/When-You-Call-Me-Singe-GDD.md` | The GDD in portable Markdown — concept, characters, mechanics, narrative arc, art & sound direction, sample walkthrough. |
 | `design-system/` | The **brand & design system**: colour/type tokens (`colors_and_type.css`), the `README.md` guidelines, component/colour `preview/` specimens, the `ui_kits/game-hud/` React HUD recreations, and reference stills in `_ref/`. |
