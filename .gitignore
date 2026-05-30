@@ -4,7 +4,7 @@ package-lock.json
 npm-debug.log*
 
 # Test artifacts
-game/smoke-report.txt
+test/smoke-report.txt
 
 # OS / editor cruft
 .DS_Store
