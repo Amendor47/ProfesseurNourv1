@@ -183,7 +183,11 @@ window.Characters = (function(){
     return P;
   }
 
-  /* ---- compose to SVG ---- */
+  /* ---- compose to SVG ----
+     Sprites are static pixel grids; we layer SMIL animation on top so the
+     busts are *alive* without redrawing every frame: a periodic eye-blink
+     and an expression-driven breath/tremor. SMIL runs inside innerHTML SVG
+     in every evergreen browser, so it works wherever a portrait is injected. */
   function rects(P, ox){
     let s='';
     for(const [x,y,w,h,c] of P){
@@ -191,19 +195,55 @@ window.Characters = (function(){
     }
     return s;
   }
+
+  // eyelid that flicks shut for a few frames every cycle (skin-coloured rect
+  // painted over the eyes). Skipped when the expression already closes them.
+  function blink(who, expr, ox){
+    const closed = (who==='lou'  && (expr==='laugh' || expr==='sleep')) ||
+                   (who==='elias' && expr==='surprise'); // squint/closed already
+    if(closed) return '';
+    const skin = who==='elias' ? E.skin : L.skin;
+    const ey   = who==='elias' ? 13 : 11;
+    const tall = expr==='surprise';            // wide eyes -> taller lid
+    const y    = tall ? ey-1 : ey;
+    const h    = tall ? 3 : 2;
+    const dur  = who==='elias' ? 5.3 : 4.6;    // out of sync between the two
+    const lid = (x)=>`<rect x="${(x+ox)*U}" y="${y*U}" width="${2*U}" height="${h*U}" fill="${skin}" opacity="0">`+
+      `<animate attributeName="opacity" values="0;0;1;0;0" keyTimes="0;0.93;0.955;0.985;1" `+
+      `dur="${dur}s" repeatCount="indefinite" calcMode="linear"/></rect>`;
+    return lid(10)+lid(14);
+  }
+
+  // breathing / mood motion applied to the whole bust via a wrapping <g>.
+  function breath(expr){
+    let dur=3.8, vals='0 0; 0 -0.7; 0 0';
+    if(expr==='angry'){ dur=0.45; vals='0 0; 0.6 0; -0.6 0; 0 0'; }        // tense tremor
+    else if(expr==='laugh'){ dur=2.0; vals='0 0; 0 -1.2; 0 0.2; 0 0'; }    // bouncy
+    else if(expr==='cry'||expr==='sad'){ dur=5.6; vals='0 0; 0.3 -0.3; -0.3 0; 0 0'; } // shaky sob
+    else if(expr==='sleep'){ dur=5.0; vals='0 0; 0 -0.5; 0 0'; }           // slow, deep
+    else if(expr==='soft'||expr==='warm'){ dur=4.4; vals='0 0; 0 -0.6; 0 0'; }
+    return `<animateTransform attributeName="transform" type="translate" `+
+      `values="${vals}" dur="${dur}s" repeatCount="indefinite" calcMode="spline" `+
+      `keySplines="${vals.split(';').slice(1).map(()=>'.4 0 .6 1').join('; ')}"/>`;
+  }
+
+  function character(who, expr, ox){
+    const P = who==='elias' ? elias(expr) : lou(expr);
+    return `<g>${breath(expr)}${rects(P,ox)}${blink(who,expr,ox)}</g>`;
+  }
+
   function wrap(inner, vbW){
     return `<svg viewBox="0 0 ${vbW} 152" xmlns="http://www.w3.org/2000/svg" `+
       `shape-rendering="crispEdges" style="width:100%;height:auto;display:block">`+
-      // soft floor shadow
+      // soft floor shadow (stays put while the bust breathes above it)
       `<ellipse cx="${vbW/2}" cy="148" rx="${vbW*0.34}" ry="6" fill="rgba(0,0,0,.45)"/>`+
       inner+`</svg>`;
   }
-  function pix(who, expr){ return who==='elias'? elias(expr) : lou(expr); }
 
   return {
-    svg(who, expr){ return wrap(rects(pix(who,expr||'neutral'),0), 130); },
+    svg(who, expr){ return wrap(character(who, expr||'neutral', 0), 130); },
     two(lExpr, eExpr){
-      return wrap(rects(lou(lExpr||'neutral'),0)+rects(elias(eExpr||'neutral'),24), 250);
+      return wrap(character('lou', lExpr||'neutral', 0)+character('elias', eExpr||'neutral', 24), 250);
     }
   };
 })();
