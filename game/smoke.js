@@ -113,6 +113,11 @@ const windowStub = {
   navigator: { userAgent: 'node', language: 'en', maxTouchPoints: 0 },
   scrollTo(){},
 };
+// Run setTimeout callbacks synchronously, but cap total fires so the
+// recursive landing typewriter (and any self-rescheduling timer) can't loop
+// forever in the harness. ~2000 is plenty to type the 23-char title.
+let timerBudget = 2000;
+windowStub.setTimeout = (fn) => { if (typeof fn === 'function' && timerBudget-- > 0) { try { fn(); } catch(e){} } return 0; };
 windowStub.webkitAudioContext = windowStub.AudioContext;
 windowStub.window = windowStub;
 windowStub.globalThis = windowStub;
