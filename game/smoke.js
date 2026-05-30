@@ -1,228 +1,187 @@
-/* Headless smoke test for "When You Call Me, Singe".
-   Stubs a minimal DOM + canvas so engine.js and characters.js can load and
-   boot under Node, catching syntax/runtime errors without a browser.
-   Writes a human-readable report to smoke-report.txt (Bash stdout is
-   unreliable in this session, so we persist results to a file). */
+/* Headless smoke test for SINGE RUN.
+   Stubs a minimal DOM + canvas so characters.js and engine.js run under Node,
+   then drives the endless runner: boot, start, pump frames, fire input,
+   force collisions, and assert core mechanics without a browser.
+   Results are written to smoke-report.txt (Bash stdout is unreliable in this
+   session, so we persist them to a file and Read that). */
 'use strict';
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
 
 const lines = [];
-const log = (s) => lines.push(s);
+const log = s => lines.push(s);
 let fails = 0;
-const ok = (c, m) => { log((c ? '[PASS] ' : '[FAIL] ') + m); if (!c) fails++; };
+const ok = (c,m)=>{ if(c){ log('[PASS] '+m); } else { fails++; log('[FAIL] '+m); } };
 
-/* ---- tiny DOM / canvas stubs ---- */
+/* ---- canvas 2d context stub ---- */
 function gradient(){ return { addColorStop(){} }; }
-const ctxProto = new Proxy({}, {
-  get(t, p){
-    if (typeof p === 'symbol' || p === 'then') return undefined;
-    if (p === 'createLinearGradient' || p === 'createRadialGradient' || p === 'createPattern') return gradient;
-    if (p === 'measureText') return () => ({ width: 8 });
-    if (p === 'getImageData') return () => ({ data: new Uint8ClampedArray(4) });
-    if (p in t) return t[p];
+const ctxStub = new Proxy({}, {
+  get(t,p){
+    if(typeof p==='symbol'||p==='then'||p==='inspect') return undefined;
+    if(p==='createLinearGradient'||p==='createRadialGradient'||p==='createPattern') return gradient;
+    if(p==='measureText') return ()=>({width:8});
+    if(p in t) return t[p];
     return function(){ return undefined; };
   },
-  set(t, p, v){ t[p] = v; return true; }
+  set(t,p,v){ t[p]=v; return true; }
 });
 
-let idCounter = 0;
-function makeStyle(){
-  const s = { setProperty(k,v){ s[k]=v; }, getPropertyValue(k){ return s[k]||''; }, removeProperty(k){ delete s[k]; } };
-  return s;
-}
+/* ---- DOM stubs ---- */
+function makeStyle(){ const s={ setProperty(k,v){s[k]=v;}, getPropertyValue(k){return s[k]||'';}, removeProperty(k){delete s[k];} }; return s; }
 function makeEl(tag){
-  const el = {
-    tagName: (tag || 'div').toUpperCase(),
-    nodeType: 1,
-    style: makeStyle(), dataset: {}, attributes: {},
-    children: [], childNodes: [],
-    _listeners: {},
-    id: '', className: '', innerHTML: '', textContent: '', value: '',
-    width: 960, height: 540,
-    classList: { _s:new Set(), add(...c){c.forEach(x=>this._s.add(x));}, remove(...c){c.forEach(x=>this._s.delete(x));},
-                 toggle(c){ this._s.has(c)?this._s.delete(c):this._s.add(c); }, contains(c){return this._s.has(c);} },
-    getContext(){ return ctxProto; },
+  const el={
+    tagName:(tag||'div').toUpperCase(), nodeType:1, style:makeStyle(), dataset:{}, attributes:{},
+    children:[], _l:{}, id:'', className:'', innerHTML:'', textContent:'', value:'',
+    width:480, height:800,
+    classList:{ _s:new Set(), add(...c){c.forEach(x=>this._s.add(x));}, remove(...c){c.forEach(x=>this._s.delete(x));},
+      toggle(c,f){ const has=this._s.has(c); const want=(f===undefined)?!has:!!f; want?this._s.add(c):this._s.delete(c); }, contains(c){return this._s.has(c);} },
+    getContext(){ return ctxStub; },
     setAttribute(k,v){ this.attributes[k]=v; if(k==='id') this.id=v; },
     getAttribute(k){ return this.attributes[k]; },
-    removeAttribute(k){ delete this.attributes[k]; },
-    appendChild(c){ this.children.push(c); this.childNodes.push(c); c.parentNode = this; return c; },
-    removeChild(c){ this.children = this.children.filter(x=>x!==c); this.childNodes = this.childNodes.filter(x=>x!==c); return c; },
-    insertBefore(c){ this.children.push(c); this.childNodes.push(c); return c; },
-    append(...cs){ cs.forEach(c=>this.appendChild(c)); },
-    prepend(c){ this.children.unshift(c); },
-    cloneNode(){ return makeEl(tag); },
-    querySelector(){ return makeEl('div'); },
-    querySelectorAll(){ return []; },
-    getBoundingClientRect(){ return { left:0, top:0, right:960, bottom:540, width:960, height:540, x:0, y:0 }; },
-    focus(){}, blur(){}, click(){ this._fire('click', {}); }, remove(){ if(this.parentNode) this.parentNode.removeChild(this); },
-    scrollIntoView(){}, animate(){ return { onfinish:null, cancel(){}, finished: Promise.resolve() }; },
-    addEventListener(type, fn){ (this._listeners[type]=this._listeners[type]||[]).push(fn); },
-    removeEventListener(type, fn){ if(this._listeners[type]) this._listeners[type]=this._listeners[type].filter(f=>f!==fn); },
-    _fire(type, ev){ (this._listeners[type]||[]).forEach(fn=>{ try{ fn(Object.assign({preventDefault(){},stopPropagation(){},target:el},ev)); }catch(e){} }); },
+    appendChild(c){ this.children.push(c); c.parentNode=this; return c; },
+    removeChild(c){ this.children=this.children.filter(x=>x!==c); return c; },
+    querySelector(){ return makeEl('div'); }, querySelectorAll(){ return []; },
+    getBoundingClientRect(){ return {left:0,top:0,right:480,bottom:800,width:480,height:800,x:0,y:0}; },
+    focus(){}, blur(){}, click(){ this._fire('click',{}); }, remove(){},
+    addEventListener(t,fn){ (this._l[t]=this._l[t]||[]).push(fn); },
+    removeEventListener(t,fn){ if(this._l[t]) this._l[t]=this._l[t].filter(f=>f!==fn); },
+    _fire(t,ev){ (this._l[t]||[]).forEach(fn=>{ try{ fn(Object.assign({preventDefault(){},stopPropagation(){},target:this},ev)); }catch(e){} }); },
     dispatchEvent(){ return true; },
   };
-  Object.defineProperty(el, 'firstChild', { get(){ return this.childNodes[0] || null; } });
-  Object.defineProperty(el, 'parentElement', { get(){ return this.parentNode || null; } });
   return el;
 }
+const byId={};
+function getEl(id){ return byId[id] || (byId[id]=(()=>{ const e=makeEl('div'); e.id=id; return e; })()); }
 
-const byId = {};
-function getEl(id){ return byId[id] || (byId[id] = (()=>{ const e=makeEl('div'); e.id=id; return e; })()); }
-
-const docListeners = {};
-const documentStub = {
-  body: makeEl('body'),
-  documentElement: makeEl('html'),
-  head: makeEl('head'),
-  getElementById: (id) => getEl(id),
-  querySelector: (sel) => { if (sel && sel[0]==='#') return getEl(sel.slice(1)); return makeEl('div'); },
-  querySelectorAll: () => [],
-  createElement: (t) => makeEl(t),
-  createElementNS: (ns,t) => makeEl(t),
-  createTextNode: (t) => ({ nodeType:3, textContent:t }),
-  createDocumentFragment: () => makeEl('fragment'),
-  addEventListener: (type, fn) => { (docListeners[type]=docListeners[type]||[]).push(fn); },
-  removeEventListener: () => {},
-  fire(type, ev){ (docListeners[type]||[]).forEach(fn=>{ try{ fn(Object.assign({preventDefault(){},target:documentStub},ev)); }catch(e){} }); },
-  fonts: { ready: Promise.resolve(), load: () => Promise.resolve(), add(){} },
-  hidden: false, visibilityState: 'visible',
+const doc={
+  body:makeEl('body'), documentElement:makeEl('html'), head:makeEl('head'),
+  getElementById:getEl,
+  querySelector:sel=>{ if(sel==='.conn-wrap') return getEl('__connwrap'); if(sel&&sel[0]==='#') return getEl(sel.slice(1)); return makeEl('div'); },
+  querySelectorAll:()=>[],
+  createElement:t=>makeEl(t), createElementNS:(n,t)=>makeEl(t), createTextNode:t=>({nodeType:3,textContent:t}),
+  addEventListener:(t,fn)=>{ (winL['doc:'+t]=winL['doc:'+t]||[]).push(fn); }, removeEventListener(){},
+  fonts:{ ready:Promise.resolve(), load:()=>Promise.resolve(), add(){} },
+  hidden:false, visibilityState:'visible',
 };
-// app mount point used by index.html
-byId['app'] = makeEl('div'); byId['app'].id = 'app';
-byId['crt'] = makeEl('div'); byId['crt'].id = 'crt';
-documentStub.body.appendChild(byId['app']);
 
-const rafQueue = [];
-const windowStub = {
-  innerWidth: 1280, innerHeight: 720, devicePixelRatio: 1,
-  document: documentStub,
-  location: { href:'', hash:'', search:'', reload(){} },
-  localStorage: (()=>{ const m={}; return { getItem:k=>k in m?m[k]:null, setItem:(k,v)=>{m[k]=String(v);}, removeItem:k=>{delete m[k];}, clear(){for(const k in m)delete m[k];} }; })(),
-  matchMedia: () => ({ matches:false, addEventListener(){}, removeEventListener(){}, addListener(){}, removeListener(){} }),
-  addEventListener(type, fn){ (docListeners['win:'+type]=docListeners['win:'+type]||[]).push(fn); },
-  removeEventListener(){},
-  requestAnimationFrame: (cb) => { rafQueue.push(cb); return rafQueue.length; },
-  cancelAnimationFrame: () => {},
-  setTimeout: (fn) => { return 0; },           // don't auto-run timers
-  clearTimeout(){}, setInterval(){ return 0; }, clearInterval(){},
-  getComputedStyle: () => ({ getPropertyValue: () => '' }),
-  AudioContext: function(){ return audioStub(); },
-  performance: { now: () => Date.now() },
-  navigator: { userAgent: 'node', language: 'en', maxTouchPoints: 0 },
-  scrollTo(){},
+const winL={};
+const rafQ=[];
+let timerBudget=4000;
+const win={
+  innerWidth:480, innerHeight:800, devicePixelRatio:1, document:doc,
+  location:{href:'',hash:'',search:'',reload(){}},
+  localStorage:(()=>{ const m={}; return { getItem:k=>k in m?m[k]:null, setItem:(k,v)=>{m[k]=String(v);}, removeItem:k=>{delete m[k];}, clear(){for(const k in m)delete m[k];} }; })(),
+  matchMedia:()=>({matches:false, addEventListener(){}, removeEventListener(){}, addListener(){}, removeListener(){}}),
+  addEventListener:(t,fn)=>{ (winL[t]=winL[t]||[]).push(fn); }, removeEventListener(){},
+  requestAnimationFrame:cb=>{ rafQ.push(cb); return rafQ.length; }, cancelAnimationFrame(){},
+  setTimeout:(fn)=>{ if(typeof fn==='function'&&timerBudget-->0){ try{fn();}catch(e){} } return 0; },
+  clearTimeout(){}, setInterval:()=>0, clearInterval(){},
+  getComputedStyle:()=>({getPropertyValue:()=>''}),
+  performance:{ now:()=>Date.now() },
+  navigator:{ userAgent:'node', language:'en', maxTouchPoints:0 },
+  AudioContext:function(){ return audioStub(); },
 };
-// Run setTimeout callbacks synchronously, but cap total fires so the
-// recursive landing typewriter (and any self-rescheduling timer) can't loop
-// forever in the harness. ~2000 is plenty to type the 23-char title.
-let timerBudget = 2000;
-windowStub.setTimeout = (fn) => { if (typeof fn === 'function' && timerBudget-- > 0) { try { fn(); } catch(e){} } return 0; };
-windowStub.webkitAudioContext = windowStub.AudioContext;
-windowStub.window = windowStub;
-windowStub.globalThis = windowStub;
-windowStub.self = windowStub;
+win.webkitAudioContext=win.AudioContext; win.window=win; win.self=win; win.globalThis=win;
 
 function audioStub(){
-  const node = {
-    gain:{ value:0, setValueAtTime(){}, linearRampToValueAtTime(){}, exponentialRampToValueAtTime(){}, setTargetAtTime(){} },
-    frequency:{ value:0, setValueAtTime(){}, linearRampToValueAtTime(){}, exponentialRampToValueAtTime(){} },
-    type:'sine', Q:{value:1}, pan:{value:0}, detune:{value:0},
-    connect(){ return node; }, disconnect(){}, start(){}, stop(){},
-    createGain(){ return audioStub(); }, createOscillator(){ return audioStub(); },
-    createBiquadFilter(){ return audioStub(); }, createStereoPanner(){ return audioStub(); },
-    createBufferSource(){ return audioStub(); }, createBuffer(){ return {}; },
-    createDynamicsCompressor(){ return audioStub(); }, createAnalyser(){ return audioStub(); },
-  };
-  node.state='running'; node.currentTime=0; node.destination={}; node.sampleRate=44100;
-  node.resume=()=>Promise.resolve(); node.suspend=()=>Promise.resolve(); node.close=()=>Promise.resolve();
-  return node;
+  const n={ gain:{value:0,setValueAtTime(){},linearRampToValueAtTime(){},exponentialRampToValueAtTime(){}},
+    frequency:{value:0,setValueAtTime(){},exponentialRampToValueAtTime(){}}, type:'sine',
+    connect(){return n;}, disconnect(){}, start(){}, stop(){},
+    createGain(){return audioStub();}, createOscillator(){return audioStub();} };
+  n.state='running'; n.currentTime=0; n.destination={}; n.resume=()=>Promise.resolve();
+  return n;
 }
 
-/* ---- run engine in a shared context ---- */
-const sandbox = Object.assign(Object.create(null), windowStub, {
-  window: windowStub, document: documentStub, console,
-  Math, Date, JSON, Object, Array, String, Number, Boolean, RegExp, Map, Set, Promise,
-  parseInt, parseFloat, isNaN, isFinite, encodeURIComponent, decodeURIComponent,
-  Float32Array, Uint8Array, Uint8ClampedArray, Int32Array, ArrayBuffer,
-  setTimeout: windowStub.setTimeout, clearTimeout: windowStub.clearTimeout,
-  setInterval: windowStub.setInterval, clearInterval: windowStub.clearInterval,
-  requestAnimationFrame: windowStub.requestAnimationFrame, cancelAnimationFrame: windowStub.cancelAnimationFrame,
-  performance: windowStub.performance, navigator: windowStub.navigator, localStorage: windowStub.localStorage,
-  AudioContext: windowStub.AudioContext, webkitAudioContext: windowStub.AudioContext,
+const sandbox=Object.assign(Object.create(null), win, {
+  window:win, document:doc, console, Math, Date, JSON, Object, Array, String, Number, Boolean, RegExp, Map, Set, Promise,
+  parseInt, parseFloat, isNaN, isFinite,
+  setTimeout:win.setTimeout, clearTimeout:win.clearTimeout, setInterval:win.setInterval, clearInterval:win.clearInterval,
+  requestAnimationFrame:win.requestAnimationFrame, cancelAnimationFrame:win.cancelAnimationFrame,
+  performance:win.performance, navigator:win.navigator, localStorage:win.localStorage,
+  AudioContext:win.AudioContext, webkitAudioContext:win.AudioContext,
 });
-sandbox.globalThis = sandbox; sandbox.self = sandbox;
+sandbox.globalThis=sandbox; sandbox.self=sandbox;
 vm.createContext(sandbox);
 
-function loadFile(name){
-  const code = fs.readFileSync(path.join(__dirname, name), 'utf8');
-  vm.runInContext(code, sandbox, { filename: name });
-}
+function loadFile(name){ vm.runInContext(fs.readFileSync(path.join(__dirname,name),'utf8'), sandbox, {filename:name}); }
 
-try {
+/* ---- run ---- */
+try{
   loadFile('characters.js');
-  // In a browser, characters.js and engine.js are separate <script> tags that
-  // share one global object, so engine.js sees the bare `Characters` that
-  // characters.js published via `window.Characters`. Mirror that here.
-  sandbox.Characters = sandbox.window.Characters;
-  ok(true, 'characters.js loaded');
-  ok(sandbox.window.Characters && typeof sandbox.window.Characters.svg === 'function', 'Characters.svg() available');
-  // exercise every expression for both characters
-  const exprs = ['neutral','angry','laugh','cry','sleep','soft','surprise','warm','away','sad'];
-  let svgErr = null, svgCount = 0;
-  for (const who of ['lou','elias']) for (const ex of exprs) {
-    try { const s = sandbox.window.Characters.svg(who, ex); if (s && s.indexOf('<svg') === 0) svgCount++; }
-    catch(e){ svgErr = e; }
-  }
-  ok(!svgErr, 'all character expressions render to SVG' + (svgErr ? ' — ' + svgErr.message : ` (${svgCount} sprites)`));
-  ok(typeof sandbox.window.Characters.two === 'function', 'Characters.two() (paired bust) available');
-} catch (e) {
-  ok(false, 'characters.js threw: ' + (e.stack || e));
-}
+  sandbox.Characters = sandbox.window.Characters;   // browser: shared global scope
+  ok(typeof sandbox.window.Characters.svg==='function', 'characters.js: Characters.svg() available');
+  let n=0; for(const who of ['lou','elias']) for(const ex of ['neutral','angry','laugh','cry','sleep','soft','surprise','warm','away','sad'])
+    if(sandbox.window.Characters.svg(who,ex).indexOf('<svg')===0) n++;
+  ok(n===20, 'characters.js: all 20 sprite/expression combos render ('+n+')');
+}catch(e){ ok(false,'characters.js threw: '+(e.stack||e)); }
 
-// The engine has no explicit boot(): loading it self-initialises (landing IIFE
-// runs, meters init, listeners bind). A clean load == a successful boot.
-let engineLoaded = false;
-try {
+let G=null;
+try{
   loadFile('engine.js');
-  engineLoaded = true;
-  ok(true, 'engine.js loaded + self-initialised without throwing');
-} catch (e) {
-  ok(false, 'engine.js threw on load: ' + (e.stack || e));
-}
+  G = sandbox.window.Game;
+  ok(!!G && typeof G.start==='function', 'engine.js loaded; Game API exposed');
+  ok(G.state==='menu', 'starts in MENU state ('+(G&&G.state)+')');
+}catch(e){ ok(false,'engine.js threw on load: '+(e.stack||e)); }
 
-if (engineLoaded) {
-  // landing typewriter + meter init run via setTimeout, which our stub fires
-  // synchronously — verify the visible side-effects landed.
-  const title = byId['title'];
-  ok(title && title.textContent && title.textContent.length > 0,
-     'landing typewriter populated the title ("' + (title.textContent||'') + '")');
-  const meter = byId['meterfill'];
-  ok(meter && meter.style && /%$/.test(meter.style.width || ''),
-     'connexion meter initialised (' + (meter && meter.style.width) + ')');
+function key(code){ (winL.keydown||[]).forEach(fn=>fn({code,key:code,preventDefault(){},repeat:false})); }
+function pump(frames){ let t=performance.now(); for(let i=0;i<frames && rafQ.length;i++){ const cb=rafQ.shift(); t+=16; try{cb(t);}catch(e){ throw e; } } }
 
-  // pump any scheduled frames (canvas minigames) without throwing
-  let frames = 0, t = 0, err = null;
-  for (let i = 0; i < 120 && rafQueue.length; i++) {
-    const cb = rafQueue.shift(); t += 16;
-    try { cb(t); frames++; } catch(e){ err = e; break; }
-  }
-  ok(!err, 'scheduled frames pumped without throwing (' + frames + ' frames)' + (err ? ' — ' + err.message : ''));
+if(G){
+  // the boot already scheduled one frame; start a run
+  pump(1);
+  G.start();
+  ok(G.state==='play', 'Game.start() enters PLAY');
 
-  // fire input + click the cat (VOD unlock) to exercise interactive paths
-  let inputErr = null;
-  try {
-    ['win:keydown','win:keyup'].forEach(t2 => {
-      (docListeners[t2]||[]).forEach(fn => [' ','ArrowLeft','ArrowRight','x','ArrowUp','Enter'].forEach(key =>
-        fn({ key, code:key, preventDefault(){}, repeat:false })));
-    });
-    if (byId['baudelaire']) byId['baudelaire']._fire('click', {});
-    for (let i=0;i<40 && rafQueue.length;i++){ const cb=rafQueue.shift(); cb(t+=16); }
-  } catch(e){ inputErr = e; }
-  ok(!inputErr, 'input + cat-click handlers run without throwing' + (inputErr ? ' — ' + inputErr.message : ''));
+  // run a while with no input — score (distance) must climb, must not die instantly
+  const s0=G.G.score;
+  let err=null;
+  try{
+    for(let i=0;i<120;i++){ pump(1); }
+  }catch(e){ err=e; }
+  ok(!err, 'main loop runs without throwing'+(err?(' — '+(err.message||err)):''));
+  ok(G.G.score>s0, 'score increases over distance ('+s0.toFixed(0)+' -> '+G.G.score.toFixed(0)+')');
+  ok(G.G.speed>=34, 'speed ramps up ('+G.G.speed.toFixed(1)+')');
+
+  // input: lane changes + jump + slide don't throw and update the player
+  let inputErr=null, laneMoved=false, jumped=false, slid=false;
+  try{
+    key('ArrowLeft');  pump(8); if(G.player.lane===0) laneMoved=true;
+    key('ArrowRight'); key('ArrowRight'); pump(8);
+    key('ArrowUp');    pump(2); if(G.player.jumpT>=0) jumped=true; pump(50);
+    key('ArrowDown');  pump(2); if(G.player.slideT>0) slid=true; pump(40);
+  }catch(e){ inputErr=e; }
+  ok(!inputErr, 'lane/jump/slide input runs without throwing'+(inputErr?(' — '+inputErr.message):''));
+  ok(laneMoved, 'ArrowLeft switches lane');
+  ok(jumped,   'jump activates an airborne arc');
+  ok(slid,     'slide activates a slide window');
+
+  // force a collision: drop a full-block obstacle into the player's lane at z~0
+  try{
+    G.G.shield=false; G.G.warm=0;
+    G.ents.length=0;
+    G.ents.push({kind:'obst', sub:'full', lane:Math.round(G.player.lanePos), z:3, passed:false, t:0});
+    let died=false;
+    for(let i=0;i<30;i++){ pump(1); if(G.state==='dead'){ died=true; break; } }
+    ok(died, 'hitting a full-block obstacle ends the run (game over)');
+  }catch(e){ ok(false,'collision handling threw: '+(e.stack||e)); }
+
+  // restart works
+  try{ G.start(); ok(G.state==='play' && G.G.score<5, 'Game.start() restarts a fresh run'); }
+  catch(e){ ok(false,'restart threw: '+(e.stack||e)); }
+
+  // collect a heart -> hearts++ and combo++
+  try{
+    const before=G.G.hearts;
+    G.ents.length=0;
+    G.ents.push({kind:'heart', lane:Math.round(G.player.lanePos), z:2, taken:false, up:0, t:0});
+    for(let i=0;i<10;i++){ pump(1); if(G.G.hearts>before) break; }
+    ok(G.G.hearts>before, 'collecting a heart increments the heart count');
+    ok(G.G.combo>0, 'collecting a heart builds combo');
+  }catch(e){ ok(false,'heart collection threw: '+(e.stack||e)); }
 }
 
 log('');
-log((fails ? fails + ' FAILED' : 'ALL PASSED') + ' — ' + (lines.filter(l=>l.startsWith('[PASS]')).length) + ' checks passed');
-fs.writeFileSync(path.join(__dirname, 'smoke-report.txt'), lines.join('\n') + '\n');
-process.exit(fails ? 1 : 0);
+log((fails? fails+' FAILED':'ALL PASSED')+' — '+lines.filter(l=>l.startsWith('[PASS]')).length+' checks passed');
+fs.writeFileSync(path.join(__dirname,'smoke-report.txt'), lines.join('\n')+'\n');
+process.exit(fails?1:0);

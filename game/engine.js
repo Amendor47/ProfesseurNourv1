@@ -1,828 +1,715 @@
-/* ============================================================
-   WHEN YOU CALL ME, SINGE — game engine
-   Visual-novel nodes + canvas minigames.
-   Two meters: CONNEXION (how close they really are, drives blend
-   + ending) and AUDIENCE (chat love; pulls against connexion
-   during streams). Lou loves less; Elias loves more; he hates
-   being called "singe" and answers to it anyway.
-   ============================================================ */
-const S = {
-  connection: 46,           // Lou is only half in it -> starts lower
-  audience: 68,             // she's a popular streamer
-  flags:{ heart:false, vodUnlocked:false, lakeAnswered:false, quiz:0, deleted:0, singe:null },
-  blend:0,
+/* ============================================================================
+   SINGE RUN — an arcade endless runner set in "When You Call Me, Singe".
+   Lou auto-runs the neon rooftops of late-night internet; collect Elias's blue
+   hearts, dodge the "you're too much" monkeys + obstacles, keep the connexion
+   alive. Three lanes, jump + slide, combos, power-ups, a speed ramp, and a
+   warmth mode when the connexion meter fills. Pure canvas, no assets.
+   ============================================================================ */
+'use strict';
+
+/* ----------------------------------------------------------------- canvas -- */
+const cv  = document.getElementById('cv');
+const ctx = cv.getContext('2d');
+let W = 480, H = 800, DPR = 1;
+
+function resize(){
+  const r = cv.getBoundingClientRect();
+  W = Math.max(320, Math.round(r.width  || window.innerWidth  || 480));
+  H = Math.max(480, Math.round(r.height || window.innerHeight || 800));
+  DPR = Math.min(window.devicePixelRatio || 1, 2);
+  cv.width  = Math.round(W * DPR);
+  cv.height = Math.round(H * DPR);
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  layout();
+}
+window.addEventListener('resize', resize);
+
+/* ------------------------------------------------------------ layout/proj -- */
+// Pseudo-3D lane projection. Player sits at the near plane (z=0); the world
+// rushes toward the camera. persp shrinks with depth so lanes converge.
+let HORIZON = 0, GROUND = 0, CX = 0, LANE = 0;
+const FOCAL = 26, ZFAR = 130;
+function layout(){
+  HORIZON = H * 0.30;
+  GROUND  = H * 0.90;
+  CX      = W * 0.5;
+  LANE    = Math.min(W * 0.265, 175);   // near-plane offset between lanes
+}
+function persp(z){ return FOCAL / (FOCAL + Math.max(0, z)); }
+function project(laneX, z, up){            // laneX continuous, up = height units
+  const p = persp(z);
+  const groundY = HORIZON + (GROUND - HORIZON) * p;
+  return { x: CX + laneX * p, y: groundY - (up || 0) * p, p };
+}
+
+/* ----------------------------------------------------------------- utils --- */
+const rand  = (a,b)=>a+Math.random()*(b-a);
+const rint  = (a,b)=>Math.floor(rand(a,b+1));
+const clamp = (v,a,b)=>v<a?a:v>b?b:v;
+const lerp  = (a,b,t)=>a+(b-a)*t;
+const TAU = Math.PI*2;
+const pick = arr => arr[(Math.random()*arr.length)|0];
+
+/* ----------------------------------------------------------------- store --- */
+const Store = {
+  best:  +(localStorage.getItem('singe.best')   || 0),
+  total: +(localStorage.getItem('singe.hearts') || 0),
+  music: localStorage.getItem('singe.music') === '1',
+  saveBest(v){ if(v>this.best){ this.best=v; localStorage.setItem('singe.best',v); return true; } return false; },
+  addHearts(n){ this.total+=n; localStorage.setItem('singe.hearts',this.total); },
+  setMusic(v){ this.music=v; localStorage.setItem('singe.music', v?'1':'0'); },
 };
-const screens = {
-  landing: document.getElementById('landing'),
-  vn:      document.getElementById('vn'),
-  game:    document.getElementById('game-wrap'),
-};
-function show(name){
-  Object.values(screens).forEach(s=>s.classList.remove('active'));
-  screens[name].classList.add('active');
-}
-function setBlend(v){
-  S.blend = Math.max(0,Math.min(1,v));
-  document.documentElement.style.setProperty('--blend',S.blend.toFixed(2));
-}
-function bump(n){
-  S.connection = Math.max(0,Math.min(100,S.connection+n));
-  document.getElementById('meterfill').style.width = S.connection+'%';
-  setBlend(S.connection/100);
-}
-function bumpAud(n){
-  S.audience = Math.max(0,Math.min(100,S.audience+n));
-  document.getElementById('audfill').style.width = S.audience+'%';
-}
-function toast(msg){
-  const t=document.getElementById('toast');
-  t.textContent=msg;t.classList.add('show');
-  setTimeout(()=>t.classList.remove('show'),2600);
-}
-const isTouch = ('ontouchstart' in window)||navigator.maxTouchPoints>0;
 
-/* ============================================================
-   LANDING — typewriter title + buzzing phone + cat
-   ============================================================ */
-(function landing(){
-  const titleText="WHEN YOU CALL ME, SINGE";
-  const el=document.getElementById('title');
-  const cam=document.getElementById('loucam'); if(cam) cam.innerHTML=Characters.svg('lou','neutral');
-  let i=0;
-  const tick=()=>{
-    el.textContent=titleText.slice(0,i);
-    i++;
-    if(i<=titleText.length){ setTimeout(tick, 66+Math.random()*60); }
-    else{
-      const b=document.getElementById('startbtn');
-      b.disabled=false;b.style.opacity=1;b.textContent="▶ press call";
-      document.getElementById('nokia').classList.remove('ring');
-    }
-  };
-  setTimeout(tick,500);
-
-  document.getElementById('startbtn').addEventListener('click',()=>{ Sound.start(); story.go('c1'); });
-  document.getElementById('musicwidget').addEventListener('click',()=>Sound.toggle());
-
-  document.getElementById('baudelaire').addEventListener('click',()=>{
-    if(!S.flags.vodUnlocked){
-      S.flags.vodUnlocked=true;
-      toast("🐈‍⬛ Baudelaire stretched. The 9-hour VOD unlocked.");
-      bump(4);
-      document.getElementById('twnotif').textContent="🔔 VOD archive: 'the 9-hour stream' unlocked";
-    } else { toast("🐈‍⬛ Baudelaire is still asleep."); }
-  });
-})();
-
-/* ============================================================
-   TINY WEBAUDIO SOUND ENGINE (lo-fi blips, no assets)
-   ============================================================ */
+/* ----------------------------------------------------------------- audio --- */
 const Sound = (function(){
-  let ctx=null, musicOn=false, musicTimer=null;
-  function ac(){ if(!ctx) ctx=new (window.AudioContext||window.webkitAudioContext)(); return ctx; }
-  function blip(freq=440,dur=.08,type='square',gain=.05){
-    try{const c=ac();const o=c.createOscillator(),g=c.createGain();
-      o.type=type;o.frequency.value=freq;g.gain.value=gain;
-      o.connect(g);g.connect(c.destination);o.start();
-      g.gain.exponentialRampToValueAtTime(0.0001,c.currentTime+dur);
-      o.stop(c.currentTime+dur);}catch(e){}
+  let ac=null, musicTimer=null, step=0;
+  const on=()=>!!ac;
+  function ensure(){ if(!ac){ try{ ac=new (window.AudioContext||window.webkitAudioContext)(); }catch(e){} } return ac; }
+  function blip(freq,dur,type,gain,slideTo){
+    if(!ac) return;
+    try{
+      const o=ac.createOscillator(), g=ac.createGain();
+      o.type=type||'square'; o.frequency.value=freq;
+      if(slideTo) o.frequency.exponentialRampToValueAtTime(slideTo, ac.currentTime+dur);
+      g.gain.setValueAtTime(0.0001, ac.currentTime);
+      g.gain.exponentialRampToValueAtTime(gain||0.05, ac.currentTime+0.01);
+      g.gain.exponentialRampToValueAtTime(0.0001, ac.currentTime+dur);
+      o.connect(g); g.connect(ac.destination); o.start(); o.stop(ac.currentTime+dur+0.02);
+    }catch(e){}
   }
-  function start(){ ac(); if(ctx.state==='suspended')ctx.resume(); }
-  function toggle(){
-    musicOn=!musicOn;
-    document.getElementById('musicwidget').textContent = "♪ lo-fi // "+(musicOn?"playing":"paused");
-    if(musicOn){ start(); loop(); } else { clearTimeout(musicTimer); }
+  const scale=[261.6,293.7,329.6,392.0,440.0,523.3,587.3];
+  function startMusic(){
+    ensure(); if(!ac||musicTimer) return;
+    musicTimer=setInterval(()=>{
+      const base=scale[step%scale.length];
+      blip(base*(step%8===0?0.5:1), 0.34, 'triangle', 0.05);
+      if(step%4===0) blip(base/2, 0.6, 'sine', 0.04);
+      step++;
+    },300);
   }
-  const scale=[261.6,293.7,329.6,392,440,523.3];
-  function loop(){
-    if(!musicOn)return;
-    const n=scale[Math.floor(Math.random()*scale.length)]/2;
-    blip(n,.5,'sine',.03);
-    musicTimer=setTimeout(loop,600+Math.random()*500);
-  }
-  return {blip,start,toggle,
-    ui:()=>blip(660,.05,'square',.04),
-    good:()=>{blip(523,.08);setTimeout(()=>blip(784,.12),90);},
-    bad:()=>blip(140,.18,'sawtooth',.05),
-    hit:()=>blip(200,.06,'square',.06),
-    ring:()=>{blip(880,.2,'sine',.05);setTimeout(()=>blip(740,.3,'sine',.05),250);}
+  function stopMusic(){ if(musicTimer){ clearInterval(musicTimer); musicTimer=null; } }
+  return {
+    resume(){ ensure(); if(ac&&ac.state==='suspended') ac.resume(); },
+    has:on, startMusic, stopMusic,
+    coin(){ blip(880,0.09,'sine',0.05,1320); },
+    coinHi(p){ blip(720+p*60,0.08,'square',0.05,1100+p*80); },
+    jump(){ blip(440,0.14,'square',0.05,820); },
+    slide(){ blip(300,0.16,'sawtooth',0.04,160); },
+    lane(){ blip(560,0.05,'square',0.03); },
+    power(){ [523,659,880].forEach((f,i)=>setTimeout(()=>blip(f,0.12,'triangle',0.05),i*70)); },
+    warmth(){ [440,554,659,880].forEach((f,i)=>setTimeout(()=>blip(f,0.18,'triangle',0.06),i*90)); },
+    hurt(){ blip(170,0.3,'sawtooth',0.06,70); },
+    dead(){ [400,330,250,170].forEach((f,i)=>setTimeout(()=>blip(f,0.32,'sawtooth',0.06),i*140)); },
   };
 })();
 
-/* ============================================================
-   STORY ENGINE  (visual-novel nodes)
-   ============================================================ */
-const vnEmoji=document.getElementById('vnemoji');
-const vnArt  =document.getElementById('vn-art');
-const snowBox=document.getElementById('snow');
-const portrait=document.getElementById('portrait');
-let lastFace={who:'lou',expr:'neutral'};
-function setFace(node){
-  let f=node.face;
-  if(f===undefined){
-    if(node.cls==='lou') f={who:'lou',expr:node.expr||'neutral'};
-    else if(node.cls==='elias') f={who:'elias',expr:node.expr||'neutral'};
-  }
-  if(f===null){ lastFace=null; }
-  else if(f){ lastFace=f; }
-  // narrator w/ no face => keep the lingering portrait
-  if(!portrait) return;
-  if(!lastFace){ portrait.innerHTML=''; portrait.style.opacity=0; return; }
-  portrait.style.opacity=1;
-  portrait.innerHTML = lastFace.who==='both'
-    ? Characters.two(lastFace.lExpr, lastFace.eExpr)
-    : Characters.svg(lastFace.who, lastFace.expr);
-}
-
-function setSnow(on){
-  snowBox.innerHTML='';
-  if(!on)return;
-  for(let i=0;i<26;i++){
-    const f=document.createElement('div');f.className='flake';f.textContent='❄';
-    f.style.left=Math.random()*100+'%';
-    f.style.fontSize=(6+Math.random()*10)+'px';
-    f.style.animationDuration=(4+Math.random()*6)+'s';
-    f.style.animationDelay=(-Math.random()*6)+'s';
-    snowBox.appendChild(f);
+/* ---------------------------------------------------------------- effects -- */
+const parts=[], floats=[];
+function burst(x,y,n,color,opt){
+  opt=opt||{};
+  for(let i=0;i<n;i++){
+    const a=rand(0,TAU), s=rand(1,opt.speed||5);
+    parts.push({x,y,vx:Math.cos(a)*s,vy:Math.sin(a)*s-(opt.up||0),life:1,
+      dec:rand(0.02,0.05),size:rand(2,opt.size||5),color,grav:opt.grav||0});
   }
 }
-
-const story = (function(){
-  const $chap=document.getElementById('vn-chapter');
-  const $spk =document.getElementById('vn-speaker');
-  const $txt =document.getElementById('vn-text');
-  const $ch  =document.getElementById('vn-choices');
-  const $next=document.getElementById('vn-next');
-  const $meter=document.getElementById('meter');
-  let cur=null, typing=null, full="";
-
-  function render(node){
-    cur=node;
-    show('vn');
-    $meter.classList.add('show');
-    $meter.classList.toggle('with-aud', !!node.stream);
-    $chap.textContent=node.chapter||'';
-    $spk.textContent=node.speaker||'—';
-    $spk.className=node.cls||'narr';
-    if(node.art) vnEmoji.textContent=node.art;
-    if(node.bg)  vnArt.style.background=node.bg;
-    setFace(node);
-    setSnow(!!node.snow);
-    if(node.action) node.action();
-
-    full=node.text||'';
-    $txt.innerHTML='';
-    $ch.innerHTML='';
-    $next.style.display='none';
-    clearInterval(typing);
-    let plain=full, idx=0;
-    typing=setInterval(()=>{
-      idx+=2;
-      if(idx>=plain.length){
-        clearInterval(typing);
-        $txt.innerHTML=full;
-        showChoices(node);
-      } else {
-        $txt.textContent = plain.replace(/<[^>]+>/g,'').slice(0,idx);
-      }
-    },14);
-    Sound.ui();
+function updateParts(dt){
+  for(let i=parts.length-1;i>=0;i--){
+    const p=parts[i];
+    p.x+=p.vx*dt*60*0.4; p.y+=p.vy*dt*60*0.4; p.vy+=p.grav*dt*60*0.4;
+    p.vx*=0.97; p.vy*=0.97; p.life-=p.dec*dt*60;
+    if(p.life<=0) parts.splice(i,1);
   }
-  function showChoices(node){
-    if(node.choices){
-      node.choices.forEach(c=>{
-        const b=document.createElement('button');
-        b.className='choice'+(c.cold?' cold':'');
-        b.textContent=c.label;
-        b.onclick=()=>{ Sound.ui(); if(c.effect)c.effect(); go(c.to); };
-        $ch.appendChild(b);
-      });
-    } else {
-      $next.style.display='block';
-      $next.onclick=()=>{ Sound.ui(); go(node.next); };
-    }
+}
+function drawParts(){
+  for(const p of parts){
+    ctx.save(); ctx.globalAlpha=clamp(p.life,0,1);
+    ctx.shadowColor=p.color; ctx.shadowBlur=10; ctx.fillStyle=p.color;
+    ctx.beginPath(); ctx.arc(p.x,p.y,Math.max(0.4,p.size*p.life),0,TAU); ctx.fill();
+    ctx.restore();
   }
-  document.getElementById('vn-box').addEventListener('click',()=>{
-    if(typing && $txt.textContent.length < full.replace(/<[^>]+>/g,'').length){
-      clearInterval(typing);$txt.innerHTML=full;showChoices(cur);
-    }
-  });
-  function go(id){
-    if(typeof id==='function'){ id(); return; }
-    const node=NODES[id];
-    if(!node){ console.warn('missing node',id); return; }
-    render(node);
+}
+function floatText(x,y,txt,color,size){
+  floats.push({x,y,txt,color:color||'#f2c14e',size:size||18,life:1});
+}
+function updateFloats(dt){
+  for(let i=floats.length-1;i>=0;i--){ const f=floats[i]; f.y-=dt*46; f.life-=dt*1.1; if(f.life<=0) floats.splice(i,1); }
+}
+function drawFloats(){
+  for(const f of floats){
+    ctx.save(); ctx.globalAlpha=clamp(f.life,0,1);
+    ctx.font=`700 ${f.size}px "JetBrains Mono",monospace`; ctx.textAlign='center';
+    ctx.lineWidth=4; ctx.strokeStyle='rgba(0,0,0,.55)'; ctx.strokeText(f.txt,f.x,f.y);
+    ctx.fillStyle=f.color; ctx.fillText(f.txt,f.x,f.y); ctx.restore();
   }
-  return {go,render};
-})();
+}
+let shake=0; const addShake=v=>{ shake=Math.max(shake,v); };
 
-/* ============================================================
-   STORY NODES
-   ============================================================ */
-const NODES = {
+/* ------------------------------------------------------------------ state -- */
+const ST = { MENU:'menu', PLAY:'play', PAUSE:'pause', DEAD:'dead' };
+let state = ST.MENU;
 
-/* ---------- CHAPTER 1 ---------- */
-c1:{chapter:"Chapter 1 — The First Stream", speaker:"narrator", cls:"narr", face:{who:'lou',expr:'cry'},
-  art:"🌙", bg:"radial-gradient(circle at 50% 30%,#241a2e,#0d0b12)", stream:true,
-  text:"It's 1&nbsp;a.m. Elias can't sleep. He clicks a clip: a French streamer mid-meltdown over the ending of an indie game — half-apologizing to chat, half-yelling at it, in two languages at once.",
-  next:"c1b"},
-c1b:{chapter:"Chapter 1 — The First Stream", speaker:"Lou", cls:"lou", expr:'angry', art:"🎧", stream:true,
-  bg:"radial-gradient(circle at 30% 40%,#3a1f1a,#0d0b12)",
-  text:"<span class='fr'>\"Non mais c'est nul, arrêtez de spam—\"</span> okay, okay, I know it's stupid to cry at a game. <em>I know.</em> But art's supposed to hurt a little. If you don't get that, log off.",
-  next:"c1c"},
-c1c:{chapter:"Chapter 1 — The First Stream", speaker:"narrator", cls:"narr", art:"💬", stream:true,
-  text:"Alerts overlap. Chat spams frog emotes and hearts, everyone performing love at her, loud. Elias should close the tab. Instead he hovers over the message box. Some love stories are decided by one small act of attention.",
-  choices:[
-    {label:"💙 send a single blue heart", cold:true, effect:()=>{S.flags.heart=true;bump(10);bumpAud(2);toast("Lou clocked the quiet one.");}, to:"c1heart"},
-    {label:"😂 spam the frog like everyone else", effect:()=>{bumpAud(5);bump(-1);toast("You blended into the noise.");}, to:"c1heart"},
-    {label:"✕ close the tab", effect:()=>bump(-40), to:"c1leave"},
-  ]},
-c1leave:{chapter:"Chapter 1 — The First Stream", speaker:"narrator", cls:"narr", face:null, art:"🌑",
-  bg:"#0d0b12",
-  text:"He closes the tab. Not dramatically. Just quietly. He never learns her name. She never learns his. The story ends here — the way most almost-loves do.",
-  choices:[{label:"…try again", effect:()=>bump(50), to:"c1"}]},
-c1heart:{chapter:"Chapter 1 — The First Stream", speaker:"narrator", cls:"narr", face:{who:'elias',expr:'soft'}, art:"💙", stream:true,
-  text:"Everyone performs affection loudly. Lou tunes most of it out — but she reads usernames obsessively, especially the silent ones. <span class='sv'>EliasNordicBlue</span>. She clocks it. Not because it's romantic. Because it's restrained, and restraint is rare in her chat.",
-  next:"c1race_intro"},
-c1race_intro:{chapter:"Chapter 1 — The First Stream", speaker:"Lou", cls:"lou", expr:'laugh', art:"🏃‍♀️", stream:true,
-  text:"\"Okay chat, NEW BIT — quiet boy, you. I'm gonna out-run you across the rooftops. Loser admits feelings first. <span class='fr'>Allez, le singe, bouge.</span>\"",
-  next:()=>RunnerGame.start(1)},
-
-/* after runner 1 + fight 1 -> chapter 2 */
-c2:{chapter:"Chapter 2 — Le problème des émotions", speaker:"narrator", cls:"narr", face:{who:'lou',expr:'neutral'}, art:"🎙️",
-  bg:"radial-gradient(circle at 60% 30%,#2a1d2e,#0d0b12)",
-  text:"After a stream that went badly, Lou sends Elias a four-minute voice note: three emotions, two tangents, one meme, one joke hiding a worry, one demand for reassurance she'd deny making. Elias listens three times. He still can't tell what she actually wants.",
-  next:"quiz_intro"},
-quiz_intro:{chapter:"Chapter 2 — Decode Lou's Emotions", speaker:"Elias", cls:"elias", art:"❓",
-  text:"\"I want to get this right.\" Help him translate. <span class='sv'>Lou speaks in implication; Elias only understands action. She thinks he's not trying. He's trying so hard he's frozen.</span>",
-  next:()=>quiz.start()},
-
-/* after quiz */
-c2sleep:{chapter:"Chapter 2 — The First Real Connection", speaker:"narrator", cls:"narr", face:{who:'lou',expr:'sleep'}, art:"😴",
-  bg:"linear-gradient(160deg,#2a1d2e 0%,#1a2230 100%)",
-  text:"Lou falls asleep on the Discord call mid-sentence. Elias stays connected — silently — for three hours, working to the sound of her breathing and her keyboard. Nothing romantic is said. It's the closest he's felt to anyone in months. For her it's just Tuesday.",
-  action:()=>{bump(8);},
-  next:"singe1"},
-
-/* ---------- THE SINGE BEAT ---------- */
-singe1:{chapter:"Chapter 2 — One Small Word", speaker:"Lou", cls:"lou", expr:'laugh', art:"🐵",
-  bg:"radial-gradient(160deg,#2a1d2e,#1a1622)",
-  text:"She wakes around 5&nbsp;a.m., sees he's still there, and grins. <span class='fr'>\"T'es resté? Mon petit singe, va.\"</span> <em>You stayed? My little monkey.</em> She means it as warm. It doesn't land warm. <em>Singe.</em> Monkey. Her entertainment.",
-  choices:[
-    {label:"let it slide. it's just how she talks.", cold:true,
-      effect:()=>{S.flags.singe='slide';bump(2);toast("You swallowed it. Again.");}, to:"singe_slide"},
-    {label:"tease back — \"only if you're the organ-grinder.\"",
-      effect:()=>{S.flags.singe='tease';bump(4);bumpAud(0);toast("She laughed. Crisis postponed.");}, to:"singe_tease"},
-    {label:"\"…actually, I don't love that name.\"", cold:true,
-      effect:()=>{S.flags.singe='ask';bump(6);toast("You said the true thing. Risky.");}, to:"singe_ask"},
-  ]},
-singe_slide:{chapter:"Chapter 2 — One Small Word", speaker:"narrator", cls:"narr", face:{who:'elias',expr:'neutral'}, art:"🐵",
-  text:"He lets it go, like he lets most things go. It's a small word. He can carry a small word. He's carrying a lot of small words by now — a whole pocketful he never empties.",
-  next:"c3"},
-singe_tease:{chapter:"Chapter 2 — One Small Word", speaker:"Lou", cls:"lou", expr:'laugh', art:"😄",
-  text:"\"<em>L'orgue de Barbarie</em> — ha. See, THIS is why I keep you.\" It's affection, real affection, the kind she only does sideways. He'll take sideways. Sideways is more than most people give him.",
-  next:"c3"},
-singe_ask:{chapter:"Chapter 2 — One Small Word", speaker:"Elias", cls:"elias", expr:'soft', art:"💙",
-  text:"A pause on the line. He braces for her to snap — she snaps easily. Instead, quiet: <span class='fr'>\"…okay. Pas singe. Noted.\"</span> She keeps slipping and saying it anyway. But she <em>noticed</em>. From Lou, being noticed back is the whole prize.",
-  action:()=>bump(3),
-  next:"c3"},
-
-/* ---------- CHAPTER 3 SWEDEN ---------- */
-c3:{chapter:"Chapter 3 — Första resan", speaker:"narrator", cls:"narr", face:{who:'both',lExpr:'neutral',eExpr:'neutral'}, art:"🇸🇪",
-  bg:"linear-gradient(160deg,#1a2535,#0d0b12)", snow:true,
-  text:"Lou visits Sweden. Less internet. No chat to perform for. More reality than she's comfortable with. Choose a memory to step into.",
-  choices:[
-    {label:"🏙️ Stockholm", to:"c3stockholm"},
-    {label:"🧊 the frozen lake", cold:true, to:"c3lake"},
-    {label:"☕ the café", to:"c3cafe"},
-  ]},
-c3stockholm:{chapter:"Chapter 3 — Stockholm", speaker:"Lou", cls:"lou", expr:'laugh', art:"🏙️", snow:true,
-  bg:"linear-gradient(160deg,#1a2535,#0d0b12)",
-  text:"\"This whole city looks emotionally unavailable. Like you.\" — Elias laughs so hard he <em>snorts</em>, the first time she's heard it. She files it away to use against him forever. (She's keeping things now. That's new.)",
-  action:()=>bump(4),
-  next:"c3"},
-c3cafe:{chapter:"Chapter 3 — The Café", speaker:"narrator", cls:"narr", face:{who:'both',lExpr:'soft',eExpr:'soft'}, art:"☕", snow:true,
-  bg:"linear-gradient(160deg,#2a2230,#0d0b12)",
-  text:"The café owner assumes they're married. Lou opens her mouth to correct him — fast, like always — and then… doesn't. Neither does Elias. They walk out in a silence that, for once, she doesn't rush to fill.",
-  action:()=>bump(5),
-  next:"c3"},
-c3lake:{chapter:"Chapter 3 — The Frozen Lake", speaker:"Lou", cls:"lou", art:"🧊", snow:true,
-  bg:"linear-gradient(160deg,#16202e,#0d0b12)",
-  text:"Lou talks and talks, because silence terrifies her — silence is where people leave. Then, quietly, almost angry about it: \"Do you ever feel like people only love a <em>version</em> of you? Like, the one that streams well?\"",
-  next:"c3lake2"},
-c3lake2:{chapter:"Chapter 3 — The Frozen Lake", speaker:"Elias", cls:"elias", expr:'soft', art:"🧊", snow:true,
-  bg:"linear-gradient(160deg,#16202e,#0d0b12)",
-  text:"A long pause. The kind that used to make her want to scream.<br><br><span class='sv'>\"…Yes.\"</span>",
-  next:"c3lake3"},
-c3lake3:{chapter:"Chapter 3 — The Frozen Lake", speaker:"narrator", cls:"narr", face:{who:'lou',expr:'soft'}, art:"❄️", snow:true,
-  bg:"linear-gradient(160deg,#16202e,#0d0b12)",
-  text:"It's the first time Lou understands: his silence isn't him leaving. It's him being careful. She's spent her whole life reading silence as the door closing. With him, it's the opposite.",
-  action:()=>{S.flags.lakeAnswered=true;bump(12);},
-  next:()=>RunnerGame.start(2)},
-
-/* after runner 2 + fight 2 -> chapter 4 */
-c4:{chapter:"Chapter 4 — La grande dispute", speaker:"narrator", cls:"narr", face:{who:'lou',expr:'angry'}, art:"💢",
-  bg:"radial-gradient(circle at 40% 60%,#3a1820,#0d0b12)", stream:true,
-  text:"They fight — about something small that wasn't small. Lou runs hot, says three cruel things in ten seconds, and reaches for the one she knows stings: she calls him <span class='fr'>singe</span> like an insult now, not a pet name. Then, still shaking, she does the thing she always does when she's hurt. She goes live.",
-  next:"c4stream"},
-c4stream:{chapter:"Chapter 4 — La grande dispute", speaker:"Lou (LIVE)", cls:"lou", expr:'angry', art:"🔴", stream:true,
-  bg:"radial-gradient(circle at 50% 40%,#3a1820,#0d0b12)",
-  text:"The chat is already filling. She could vent the whole fight to forty thousand people who'll take her side instantly — or she could close the laptop and say the hard thing to the one person it's actually about. Audience love is faster. It's just pointed the wrong way.",
-  choices:[
-    {label:"📣 vent it all to chat (they'll defend Loupiote)",
-      effect:()=>{bumpAud(16);bump(-14);toast("Chat erupts. Elias goes very quiet.");}, to:"c4overshared"},
-    {label:"⏹ end stream. take it to him.", cold:true,
-      effect:()=>{bumpAud(-10);bump(8);toast("Forty thousand people, muted. One person, reached.");}, to:"c4texts_intro"},
-  ]},
-c4overshared:{chapter:"Chapter 4 — La grande dispute", speaker:"narrator", cls:"narr", art:"📈", stream:true,
-  text:"The clip travels by morning. The audience meter spikes; strangers pile on Elias's silence with her. He doesn't fire back. He just disappears — not to punish her, to <em>regulate</em>. She reads the silence as abandonment. He reads the broadcast as betrayal. Both of them hurting the other while trying to protect themselves.",
-  next:"c4texts_intro"},
-c4texts_intro:{chapter:"Chapter 4 — La grande dispute", speaker:"narrator", cls:"narr", face:null, art:"💬",
-  text:"Hours later. No audience now — just two phones and the distance between them. Typing bubbles appear, vanish, return. You can delete a message before it sends. Choose what actually crosses the gap.",
-  next:()=>TextGame.start()},
-
-/* climax, set after text minigame */
-c4climax:{chapter:"Chapter 4 — La grande dispute", speaker:"Elias", cls:"elias", expr:'warm', art:"💙",
-  bg:"linear-gradient(160deg,#1a2230,#2a1820)",
-  text:"\"I don't always know what you mean. I get it wrong, constantly. And I hate the name. But —\"<br><br><b>\"I stay even when I don't understand. That's the part you can count on.\"</b>",
-  next:"c4climax2"},
-c4climax2:{chapter:"Chapter 4 — La grande dispute", speaker:"narrator", cls:"narr", face:{who:'both',lExpr:'soft',eExpr:'warm'}, art:"🫶",
-  text:"Not \"I understand you perfectly.\" Not \"you're easy to love\" — she isn't, and he won't lie. Just: I stay. Lou has been loved loudly by thousands and it never once felt like this. She doesn't say that. But she stops typing the cruel thing.",
-  action:()=>bump(10),
-  next:"final"},
-
-/* ---------- FINAL ---------- */
-final:{chapter:"Final Chapter — When You Call Me", speaker:"narrator", cls:"narr", face:{who:'both',lExpr:'soft',eExpr:'soft'}, art:"📞",
-  bg:"#05040a",
-  text:"They mostly text. Voice feels too intimate, too real, no edit button. So the final chapter begins the way the whole game began: with a phone, ringing.",
-  next:()=>PhoneCall.start()},
+const G = {
+  speed:0, dist:0, score:0, hearts:0, combo:0, bestCombo:0,
+  conn:0, warm:0, magnet:0, shield:false, shieldT:0,
+  rowTimer:0, time:0, mult:1, hitFlash:0, started:false,
 };
+const SPEED0=34, SPEEDMAX=96, ACCEL=0.7;
+const player = { lane:1, lanePos:1, jumpT:-1, jumpDur:0.72, slideT:0, run:0, lean:0, dead:false };
 
-/* ============================================================
-   DECODE-LOU QUIZ
-   ============================================================ */
-const quiz = (function(){
-  const Q=[
-    {q:"\"I'm fine.\" — what does Lou actually mean?",
-     a:[["She is, in fact, fine.",0],["Ask me one more time. Gently. Then I'll tell you.",2],["Leave me alone forever.",0]]},
-    {q:"She sends a playlist at 2&nbsp;a.m. Why?",
-     a:[["She wants song recommendations back.",0],["It's a confession in the only language that doesn't scare her.",2],["Her phone glitched.",0]]},
-    {q:"\"whatever lol\" translates to…",
-     a:[["genuine indifference",0],["\"this matters to me and I'm terrified it doesn't to you\"",2],["a typo",0]]},
-    {q:"She's spiralling. What reassurance actually works?",
-     a:[["\"Calm down, it's not a big deal.\"",0],["Stay on the call. Don't leave. Don't fix it. Just don't leave.",2],["A long, logical explanation of why she's wrong.",0]]},
-  ];
-  let i=0;
-  function start(){ i=0; ask(); }
-  function ask(){
-    if(i>=Q.length){ done(); return; }
-    const node=Q[i];
-    story.render({
-      chapter:"Chapter 2 — Decode Lou's Emotions",
-      speaker:"Lou (decode "+(i+1)+"/"+Q.length+")", cls:"lou", art:"🧩",
-      bg:"radial-gradient(circle at 50% 40%,#2a1d2e,#0d0b12)",
-      text:node.q,
-      choices:node.a.map(opt=>({
-        label:opt[0],
-        effect:()=>{ if(opt[1]>0){Sound.good();S.flags.quiz++;bump(opt[1]);} else {Sound.bad();bump(-1);} },
-        to:()=>{ i++; setTimeout(ask,260); }
-      }))
-    });
-  }
-  function done(){
-    const good=S.flags.quiz;
-    story.render({
-      chapter:"Chapter 2 — Decode Lou's Emotions", speaker:"narrator", cls:"narr", art:"🪞",
-      text:"You decoded "+good+"/"+Q.length+" correctly. "+(good>=3
-        ? "You're learning her grammar of implication. It's hard, and it's exhausting, and she will never grade you on it. Misunderstanding her is just this easy."
-        : "You misread her more than once. So does Elias. The game was never about getting it right — it's about staying to try again."),
-      next:"c2sleep"
-    });
-  }
-  return {start};
-})();
+const ents=[];  // {kind:'heart'|'obst'|'pow', sub, lane, z, taken, passed, ...}
 
-/* ============================================================
-   TEXT-MESSAGE MINIGAME (Chapter 4)
-   ============================================================ */
-const TextGame=(function(){
-  const beats=[
-    {ctx:"Lou typed three furious paragraphs. The bubble blinks, loaded.",
-     opt:[["send all three paragraphs",-3],["delete them. send: \"i got scared. that's all it was.\"",4]]},
-    {ctx:"Elias has been silent 40 minutes. Your move, as Lou.",
-     opt:[["\"forget it. obviously you don't care.\"",-3],["\"i don't need you to fix it. i need to know you didn't leave.\"",4]]},
-    {ctx:"Elias is typing… deleting… typing. Your move, as Elias.",
-     opt:[["\"you shouldn't have put us on stream.\"",-2],["\"i went quiet to think, not to leave. i'm still here.\"",4]]},
-  ];
-  let i=0;
-  function start(){ i=0; beat(); }
-  function beat(){
-    if(i>=beats.length){ story.go('c4climax'); return; }
-    const b=beats[i];
-    story.render({
-      chapter:"Chapter 4 — La grande dispute",
-      speaker:"text thread ("+(i+1)+"/"+beats.length+")", cls:"narr", art:"📱",
-      bg:"radial-gradient(circle at 40% 60%,#2a1820,#0d0b12)",
-      text:b.ctx,
-      choices:b.opt.map(o=>({
-        label:o[0],
-        cold:o[1]>0,
-        effect:()=>{ if(o[1]>0){Sound.good();if(o[0].startsWith('delete'))S.flags.deleted++;}else Sound.bad(); bump(o[1]); },
-        to:()=>{ i++; setTimeout(beat,260); }
-      }))
-    });
-  }
-  return {start};
-})();
+function jumpHeight(){ return H*0.20; }
+function isAir(){ return player.jumpT>=0; }
+function airUp(){ if(player.jumpT<0) return 0; const p=player.jumpT/player.jumpDur; return jumpHeight()*4*p*(1-p); }
+function isSliding(){ return player.slideT>0; }
 
-/* ============================================================
-   CANVAS — shared setup
-   ============================================================ */
-const cv=document.getElementById('cv'), ctx2=cv.getContext('2d');
-const W=cv.width, H=cv.height;
-const banner=document.getElementById('game-banner');
-const help=document.getElementById('game-help');
-const input={left:false,right:false,jump:false,jumpEdge:false,act:false,actEdge:false};
-
+/* ------------------------------------------------------------------ input -- */
+function setLane(d){
+  if(state!==ST.PLAY) return;
+  const n=clamp(player.lane+d,0,2);
+  if(n!==player.lane){ player.lane=n; player.lean=d*0.5; Sound.lane(); }
+}
+function doJump(){
+  if(state!==ST.PLAY) return;
+  if(player.jumpT<0 && !isSliding()){ player.jumpT=0; Sound.jump();
+    const pj=project((player.lane-1)*LANE,0,0); burst(pj.x,pj.y,8,'#cdb6ff',{speed:3,up:1}); }
+}
+function doSlide(){
+  if(state!==ST.PLAY) return;
+  if(player.jumpT>=0){ player.jumpT=Math.max(player.jumpT,player.jumpDur*0.62); } // fast-fall
+  if(player.slideT<=0){ player.slideT=0.55; Sound.slide();
+    const pj=project((player.lane-1)*LANE,0,0); burst(pj.x,pj.y,8,'#cdd6dd',{speed:3}); }
+}
 window.addEventListener('keydown',e=>{
-  if(['ArrowLeft','a','A'].includes(e.key)) input.left=true;
-  if(['ArrowRight','d','D'].includes(e.key)) input.right=true;
-  if([' ','ArrowUp','w','W'].includes(e.key)){ if(!input.jump)input.jumpEdge=true; input.jump=true; e.preventDefault();}
-  if(['x','X','Enter','f','F'].includes(e.key)){ if(!input.act)input.actEdge=true; input.act=true; }
+  if(['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Space'].includes(e.code)) e.preventDefault();
+  if(e.repeat) return;
+  Sound.resume();
+  switch(e.code){
+    case 'ArrowLeft': case 'KeyA': setLane(-1); break;
+    case 'ArrowRight': case 'KeyD': setLane(1); break;
+    case 'ArrowUp': case 'KeyW': case 'Space': doJump(); break;
+    case 'ArrowDown': case 'KeyS': doSlide(); break;
+    case 'KeyP': case 'Escape': togglePause(); break;
+    case 'Enter': if(state===ST.MENU) startGame(); else if(state===ST.DEAD) startGame(); break;
+  }
 });
-window.addEventListener('keyup',e=>{
-  if(['ArrowLeft','a','A'].includes(e.key)) input.left=false;
-  if(['ArrowRight','d','D'].includes(e.key)) input.right=false;
-  if([' ','ArrowUp','w','W'].includes(e.key)) input.jump=false;
-  if(['x','X','Enter','f','F'].includes(e.key)) input.act=false;
+// touch: swipe gestures + tap-to-jump
+let tsx=0,tsy=0,tst=0;
+cv.addEventListener('touchstart',e=>{ const t=e.changedTouches[0]; tsx=t.clientX;tsy=t.clientY;tst=Date.now(); Sound.resume(); },{passive:true});
+cv.addEventListener('touchend',e=>{
+  const t=e.changedTouches[0], dx=t.clientX-tsx, dy=t.clientY-tsy, adx=Math.abs(dx), ady=Math.abs(dy);
+  if(adx<24 && ady<24){ doJump(); return; }          // tap
+  if(adx>ady){ setLane(dx>0?1:-1); } else { dy<0?doJump():doSlide(); }
+},{passive:true});
+cv.addEventListener('mousedown',()=>{ Sound.resume(); if(state===ST.PLAY) doJump(); });
+
+/* ------------------------------------------------------------------ spawn -- */
+function spawnRow(){
+  // difficulty grows with distance; never block all three lanes.
+  const diff = clamp(G.dist/2600, 0, 1);
+  const nObst = Math.random() < lerp(0.35,0.92,diff) ? (Math.random()<lerp(0.15,0.6,diff)?2:1) : 0;
+  const lanes=[0,1,2];
+  // shuffle
+  for(let i=lanes.length-1;i>0;i--){ const j=rint(0,i); [lanes[i],lanes[j]]=[lanes[j],lanes[i]]; }
+  const obstLanes = lanes.slice(0,nObst);
+  const free = [0,1,2].filter(l=>!obstLanes.includes(l));
+
+  for(const l of obstLanes){
+    const sub = pick(['low','high','full','low','high']); // full a bit rarer
+    ents.push({kind:'obst', sub, lane:l, z:ZFAR, passed:false, t:rand(0,TAU)});
+  }
+  // heart trail in a free lane
+  if(free.length && Math.random()<0.85){
+    const l = pick(free);
+    const n = rint(3,6);
+    const arc = Math.random()<0.4;          // arc => jump to grab
+    for(let k=0;k<n;k++){
+      ents.push({kind:'heart', lane:l, z:ZFAR + k*5, taken:false,
+        up: arc ? jumpHeight()*0.8*Math.sin(Math.PI*(k/(n-1))) : 0, t:rand(0,TAU)});
+    }
+  }
+  // occasional power-up in a free lane
+  if(free.length && Math.random()<0.10){
+    const l = pick(free);
+    ents.push({kind:'pow', sub: pick(['magnet','shield']), lane:l, z:ZFAR+12, taken:false, t:0});
+  }
+}
+
+/* ----------------------------------------------------------------- update -- */
+function update(dt){
+  G.time+=dt;
+  G.speed = Math.min(SPEEDMAX, SPEED0 + G.time*ACCEL);
+  G.dist += G.speed*dt;
+  G.score += G.speed*dt*0.18*G.mult;
+
+  // timers
+  if(G.warm>0){ G.warm-=dt; if(G.warm<=0){ G.conn=0; hud.connWrap.classList.remove('warm'); } }
+  if(G.magnet>0) G.magnet-=dt;
+  if(G.shield && G.shieldT>0){ G.shieldT-=dt; }
+  if(G.hitFlash>0) G.hitFlash-=dt;
+
+  // multiplier from combo tier + warmth
+  const tier = 1 + Math.min(4, Math.floor(G.combo/10));
+  G.mult = tier * (G.warm>0?2:1);
+
+  // player anim
+  player.lanePos = lerp(player.lanePos, player.lane, clamp(dt*14,0,1));
+  player.lean = lerp(player.lean, 0, clamp(dt*8,0,1));
+  player.run += G.speed*dt*0.10;
+  if(player.jumpT>=0){ player.jumpT+=dt; if(player.jumpT>=player.jumpDur) player.jumpT=-1; }
+  if(player.slideT>0) player.slideT-=dt;
+
+  // spawn rows at a consistent world spacing regardless of speed
+  G.rowTimer-=dt;
+  if(G.rowTimer<=0){ spawnRow(); G.rowTimer = 22 / G.speed; }
+
+  // move + resolve entities
+  const pl = Math.round(player.lanePos);
+  for(let i=ents.length-1;i>=0;i--){
+    const e=ents[i]; e.z-=G.speed*dt; e.t+=dt;
+    if(e.z < -8){ ents.splice(i,1); continue; }
+
+    const inWindow = e.z<=5 && e.z>=-5;
+    if(e.kind==='heart'){
+      const grab = !e.taken && inWindow && (G.magnet>0 || e.lane===pl);
+      if(grab){ e.taken=true; collectHeart(e); ents.splice(i,1); }
+    } else if(e.kind==='pow'){
+      if(!e.taken && inWindow && e.lane===pl){ e.taken=true; collectPower(e); ents.splice(i,1); }
+    } else { // obstacle
+      if(!e.passed && inWindow && e.lane===pl){
+        const cleared = (e.sub==='low'  && isAir()) ||
+                        (e.sub==='high' && isSliding());
+        if(!cleared){ e.passed=true; hitObstacle(e); }
+        else { e.passed=true; nearMiss(e); }
+      } else if(!e.passed && e.z<-2){ e.passed=true; if(e.lane!==pl) nearMiss(e,true); }
+    }
+  }
+
+  updateParts(dt); updateFloats(dt);
+  if(shake>0){ shake*=0.86; if(shake<0.4) shake=0; }
+}
+
+function collectHeart(e){
+  G.hearts++; G.combo++; if(G.combo>G.bestCombo) G.bestCombo=G.combo;
+  const tier=1+Math.min(4,Math.floor(G.combo/10));
+  const gain = 10 * G.mult;
+  G.score += gain;
+  if(G.warm<=0){ G.conn=clamp(G.conn+3.2,0,100); if(G.conn>=100) enterWarmth(); }
+  const pj=project((e.lane-1)*LANE, Math.max(0,e.z), e.up);
+  burst(pj.x,pj.y,8,'#8fb4e6',{speed:3,size:4});
+  Sound.coinHi(Math.min(1,G.combo/40));
+  if(G.combo>0 && G.combo%10===0){ showCombo(G.combo); }
+  hud.bumpMult();
+  refreshHud();
+}
+function collectPower(e){
+  Sound.power();
+  const pj=project((e.lane-1)*LANE,Math.max(0,e.z),26);
+  if(e.sub==='magnet'){ G.magnet=8; floatText(pj.x,pj.y,'MAGNET',' #f2c14e',18); burst(pj.x,pj.y,16,'#f2c14e',{speed:5}); }
+  else { G.shield=true; G.shieldT=12; floatText(pj.x,pj.y,'SHIELD','#b8b0cf',18); burst(pj.x,pj.y,16,'#b8b0cf',{speed:5}); }
+  refreshHud();
+}
+function enterWarmth(){
+  G.warm=7; Sound.warmth(); hud.connWrap.classList.add('warm');
+  const pj=project((player.lane-1)*LANE,0,40);
+  burst(pj.x,pj.y,40,'#f2c14e',{speed:7,size:6,up:1});
+  floatText(W/2,H*0.4,'WARMTH ×2','#f2c14e',30);
+}
+function nearMiss(e,sideways){
+  if(sideways){ G.score+=6*G.mult; }
+}
+function hitObstacle(e){
+  const pj=project((e.lane-1)*LANE,Math.max(0,e.z),20);
+  if(G.warm>0){ // warmth burns through
+    burst(pj.x,pj.y,20,'#f2c14e',{speed:6}); Sound.coin(); return;
+  }
+  if(G.shield){ G.shield=false; G.shieldT=0; addShake(10); G.hitFlash=0.3;
+    burst(pj.x,pj.y,24,'#b8b0cf',{speed:6}); Sound.hurt(); floatText(pj.x,pj.y,'shield!','#b8b0cf',18);
+    refreshHud(); return; }
+  // death
+  G.combo=0; addShake(18); G.hitFlash=0.6; Sound.hurt();
+  burst(pj.x,pj.y,34,'#e0533a',{speed:7,size:6});
+  die();
+}
+
+/* ------------------------------------------------------------------ render - */
+function blend(){ // 0..1 warm blend follows connexion + warmth
+  return clamp(G.warm>0 ? 1 : G.conn/100*0.7, 0, 1);
+}
+function drawSky(){
+  const b=blend();
+  const top = mix('#0a0a1e','#241a2e',b);
+  const mid = mix('#1b1430','#3a1f2a',b);
+  const low = mix('#241a3a','#5a2f33',b);
+  const g=ctx.createLinearGradient(0,0,0,HORIZON+40);
+  g.addColorStop(0,top); g.addColorStop(0.6,mid); g.addColorStop(1,low);
+  ctx.fillStyle=g; ctx.fillRect(0,0,W,HORIZON+60);
+  // moon
+  const mx=W*0.74, my=HORIZON*0.5;
+  const mg=ctx.createRadialGradient(mx,my,4,mx,my,90);
+  mg.addColorStop(0,'rgba(255,246,223,.9)'); mg.addColorStop(0.25,'rgba(255,246,223,.8)'); mg.addColorStop(1,'rgba(255,246,223,0)');
+  ctx.fillStyle=mg; ctx.beginPath(); ctx.arc(mx,my,90,0,TAU); ctx.fill();
+  ctx.fillStyle='#fff6df'; ctx.beginPath(); ctx.arc(mx,my,26,0,TAU); ctx.fill();
+  // stars
+  ctx.fillStyle='rgba(255,255,255,.7)';
+  for(let i=0;i<48;i++){ const sx=((i*167.3)% W), sy=(i*53.7)%HORIZON; const tw=0.4+0.6*Math.sin(G.time*2+i);
+    ctx.globalAlpha=0.25+0.5*tw; ctx.fillRect(sx,sy,2,2); }
+  ctx.globalAlpha=1;
+  // skyline silhouettes (parallax with lane drift)
+  const drift = (player.lanePos-1)*18;
+  cityBand(HORIZON+10, 0.5, mix('#120e22','#241526',b), 64, drift*0.4);
+  cityBand(HORIZON+24, 1.0, mix('#0c0a18','#1a0f1e',b), 96, drift*0.8);
+}
+function cityBand(baseY,alpha,color,maxh,drift){
+  ctx.save(); ctx.globalAlpha=alpha; ctx.fillStyle=color;
+  const sp=46, off=((G.dist*0.4+drift)% sp);
+  for(let x=-off-sp; x<W+sp; x+=sp){
+    const seed=Math.sin((x+off)*12.9)*0.5+0.5;
+    const bw=sp*(0.7+seed*0.5), bh=18+seed*maxh;
+    ctx.fillRect(x, baseY-bh, bw, bh+40);
+  }
+  ctx.restore();
+}
+function drawRoad(){
+  const b=blend();
+  // ground trapezoid
+  const nL=project(-1.5*LANE,0,0), nR=project(1.5*LANE,0,0);
+  const fL=project(-1.5*LANE,ZFAR,0), fR=project(1.5*LANE,ZFAR,0);
+  const g=ctx.createLinearGradient(0,HORIZON,0,GROUND);
+  g.addColorStop(0, mix('#0e0b1a','#1c1020',b)); g.addColorStop(1, mix('#1a1430','#2a1622',b));
+  ctx.fillStyle=g;
+  ctx.beginPath(); ctx.moveTo(fL.x,fL.y); ctx.lineTo(fR.x,fR.y); ctx.lineTo(nR.x,nR.y); ctx.lineTo(nL.x,nL.y); ctx.closePath(); ctx.fill();
+  // moving transverse rungs (speed feel)
+  const SEG=10, phase=G.dist % SEG;
+  for(let z=ZFAR - phase; z>0; z-=SEG){
+    const a=project(-1.5*LANE,z,0), c=project(1.5*LANE,z,0);
+    ctx.strokeStyle=`rgba(242,193,78,${0.04+0.10*a.p})`; ctx.lineWidth=Math.max(1,2*a.p);
+    ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(c.x,c.y); ctx.stroke();
+  }
+  // lane divider lines
+  for(const off of [-0.5,0.5]){
+    const a=project(off*2*LANE,0,0), f=project(off*2*LANE,ZFAR,0);
+    ctx.strokeStyle='rgba(205,214,221,.18)'; ctx.lineWidth=2;
+    ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(f.x,f.y); ctx.stroke();
+  }
+  // glowing road edges
+  for(const off of [-1.5,1.5]){
+    const a=project(off*LANE,0,0), f=project(off*LANE,ZFAR,0);
+    ctx.strokeStyle=mix('rgba(110,147,189,.5)','rgba(216,105,59,.6)',b); ctx.lineWidth=3;
+    ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(f.x,f.y); ctx.stroke();
+  }
+}
+function drawEntities(){
+  const sorted=ents.slice().sort((a,b)=>b.z-a.z);  // far first
+  for(const e of sorted){
+    if(e.z>ZFAR) continue;
+    const laneX=(e.lane-1)*LANE;
+    if(e.kind==='heart') drawHeart(laneX,e.z,e.up,e.t);
+    else if(e.kind==='pow') drawPower(laneX,e.z,e.sub,e.t);
+    else drawObstacle(laneX,e.z,e.sub,e.t);
+  }
+}
+function drawHeart(laneX,z,up,t){
+  const pj=project(laneX,z,(up||0)+14+Math.sin(t*4)*3); const s=Math.max(3,16*pj.p);
+  ctx.save(); ctx.globalAlpha=clamp(pj.p*1.4,0,1);
+  ctx.shadowColor='#6e93bd'; ctx.shadowBlur=14*pj.p;
+  ctx.fillStyle='#8fb4e6'; heartPath(pj.x,pj.y,s); ctx.fill();
+  ctx.fillStyle='#dbe8fb'; heartPath(pj.x-s*0.12,pj.y-s*0.12,s*0.5); ctx.fill();
+  ctx.restore();
+}
+function heartPath(x,y,s){
+  ctx.beginPath();
+  ctx.moveTo(x,y+s*0.35);
+  ctx.bezierCurveTo(x-s*0.6,y-s*0.25, x-s*0.5,y-s*0.85, x,y-s*0.45);
+  ctx.bezierCurveTo(x+s*0.5,y-s*0.85, x+s*0.6,y-s*0.25, x,y+s*0.35);
+  ctx.closePath();
+}
+function drawPower(laneX,z,sub,t){
+  const pj=project(laneX,z,26+Math.sin(t*3)*3); const s=Math.max(5,20*pj.p);
+  ctx.save(); ctx.globalAlpha=clamp(pj.p*1.4,0,1);
+  const col=sub==='magnet'?'#f2c14e':'#b8b0cf';
+  ctx.shadowColor=col; ctx.shadowBlur=18*pj.p;
+  ctx.strokeStyle=col; ctx.lineWidth=Math.max(2,4*pj.p); ctx.fillStyle='rgba(0,0,0,.35)';
+  ctx.beginPath(); ctx.arc(pj.x,pj.y,s,0,TAU); ctx.fill(); ctx.stroke();
+  ctx.fillStyle=col; ctx.font=`700 ${Math.max(8,s*1.1)}px serif`; ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.fillText(sub==='magnet'?'🧲':'🛡', pj.x, pj.y+1);
+  ctx.textBaseline='alphabetic'; ctx.restore();
+}
+function drawObstacle(laneX,z,sub,t){
+  const baseP=persp(z);
+  const w=Math.max(6, LANE*0.78*baseP);
+  ctx.save();
+  if(sub==='low'){
+    const pj=project(laneX,z,0); const h=Math.max(6,34*baseP);
+    ctx.shadowColor='#e0533a'; ctx.shadowBlur=12*baseP;
+    ctx.fillStyle='#b1502a'; rrect(pj.x-w/2,pj.y-h,w,h,4*baseP); ctx.fill();
+    ctx.fillStyle='#f2c14e'; ctx.fillRect(pj.x-w/2,pj.y-h,w,Math.max(1.5,4*baseP));
+    // hazard stripes
+    ctx.fillStyle='rgba(0,0,0,.25)';
+    for(let i=0;i<w;i+=Math.max(6,10*baseP)) ctx.fillRect(pj.x-w/2+i,pj.y-h,Math.max(2,4*baseP),h);
+  } else if(sub==='high'){
+    const pj=project(laneX,z,0);
+    const top=Math.max(8,jumpHeight()*0.9*baseP), gap=Math.max(8,38*baseP), th=Math.max(5,18*baseP);
+    ctx.shadowColor='#6e93bd'; ctx.shadowBlur=12*baseP;
+    ctx.fillStyle='#506f97'; rrect(pj.x-w/2,pj.y-top-th,w,th,3*baseP); ctx.fill();   // overhead banner
+    ctx.fillStyle='#cdd6dd'; ctx.font=`700 ${Math.max(6,th*0.7)}px "JetBrains Mono"`; ctx.textAlign='center';
+    if(baseP>0.4) ctx.fillText('SLIDE', pj.x, pj.y-top-th*0.3);
+    // posts
+    ctx.fillStyle='#3a4a64'; ctx.fillRect(pj.x-w/2,pj.y-top-th,Math.max(2,4*baseP),top+th);
+    ctx.fillRect(pj.x+w/2-Math.max(2,4*baseP),pj.y-top-th,Math.max(2,4*baseP),top+th);
+  } else { // full — a "you're too much" monkey gremlin
+    const h=Math.max(14,jumpHeight()*1.15*baseP);
+    const pj=project(laneX,z,0); const cy=pj.y-h*0.5, cx=pj.x;
+    ctx.shadowColor='rgba(120,60,160,.8)'; ctx.shadowBlur=16*baseP;
+    ctx.fillStyle='#2a1830';
+    ctx.beginPath();
+    for(let a=0;a<TAU;a+=0.4){ const r=w*0.5*(1+0.12*Math.sin(a*3+t*4));
+      const px=cx+Math.cos(a)*r, py=cy+Math.sin(a)*r*(h/w); a===0?ctx.moveTo(px,py):ctx.lineTo(px,py); }
+    ctx.closePath(); ctx.fill();
+    if(baseP>0.3){
+      ctx.shadowBlur=8*baseP; ctx.shadowColor='#ff5a5a'; ctx.fillStyle='#f2c14e';
+      const ey=cy-h*0.1, ex=w*0.16;
+      ctx.beginPath(); ctx.ellipse(cx-ex,ey,4*baseP,2.6*baseP,0.3,0,TAU); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(cx+ex,ey,4*baseP,2.6*baseP,-0.3,0,TAU); ctx.fill();
+      ctx.fillStyle='#ff5a5a';
+      ctx.beginPath(); ctx.arc(cx-ex,ey,1.4*baseP,0,TAU); ctx.fill();
+      ctx.beginPath(); ctx.arc(cx+ex,ey,1.4*baseP,0,TAU); ctx.fill();
+    }
+  }
+  ctx.restore();
+}
+
+/* ----- Lou, the runner ----- */
+function drawPlayer(){
+  const up=airUp();
+  const pj=project((player.lanePos-1)*LANE,0,up);
+  const sliding=isSliding(), air=isAir();
+  ctx.save();
+  ctx.translate(pj.x, pj.y);
+  ctx.rotate(player.lean*0.18);
+  if(G.hitFlash>0 && Math.floor(G.hitFlash*16)%2) ctx.globalAlpha=0.4;
+
+  // shadow on the deck (shrinks as she leaves the ground)
+  ctx.save(); ctx.globalAlpha=clamp(0.4-up/H,0.08,0.4); ctx.fillStyle='#000';
+  ctx.beginPath(); ctx.ellipse(0,2, 22-up*0.04, 6,0,0,TAU); ctx.fill(); ctx.restore();
+
+  // warmth / shield aura
+  if(G.warm>0 || G.shield || G.magnet>0){
+    const col=G.warm>0?'#f2c14e':(G.shield?'#b8b0cf':'#f2c14e');
+    ctx.save(); ctx.globalAlpha=0.25+0.1*Math.sin(G.time*8); ctx.shadowColor=col; ctx.shadowBlur=22;
+    ctx.fillStyle=col; ctx.beginPath(); ctx.arc(0,-34,40,0,TAU); ctx.fill(); ctx.restore();
+  }
+
+  const run=player.run;
+  // colours (Lou)
+  const hood='#d8693b', hoodD='#b1502a', skin='#c5895b', hair='#46291a', amber='#f2c14e';
+
+  if(sliding){
+    // low slide pose
+    ctx.fillStyle=hoodD; rrect(-26,-18,46,16,6); ctx.fill();
+    ctx.fillStyle=hood;  rrect(-26,-22,40,12,6); ctx.fill();
+    ctx.fillStyle=skin;  rrect(14,-24,14,12,4); ctx.fill();   // head forward
+    ctx.fillStyle=hair;  rrect(14,-26,14,5,3); ctx.fill();
+    ctx.fillStyle=amber; ctx.fillRect(13,-22,3,7);            // headphone
+    ctx.restore(); return;
+  }
+
+  const legSwing = air? 0.5 : Math.sin(run)*0.85;
+  const armSwing = air? -0.9 : Math.sin(run)*0.8;
+  // legs
+  leg(-legSwing, hoodD); leg(legSwing, '#2a2440');
+  // torso (hoodie)
+  ctx.fillStyle=hood; rrect(-12,-46,24,30,7); ctx.fill();
+  ctx.fillStyle=hoodD; rrect(-12,-22,24,6,3); ctx.fill();
+  ctx.fillStyle=amber; ctx.fillRect(-2,-44,4,22);            // zipper highlight
+  // back arm + front arm
+  arm(-armSwing, hoodD);
+  // head
+  ctx.save(); ctx.translate(0,-52);
+  ctx.fillStyle=skin; rrect(-9,-12,18,18,6); ctx.fill();
+  ctx.fillStyle=hair; rrect(-10,-14,20,8,4); ctx.fill();
+  ctx.fillStyle=hair; rrect(-11,-6,4,16,2); ctx.fill();      // long hair fall
+  // amber headphones
+  ctx.fillStyle='#272030'; ctx.fillRect(-11,-14,22,3);
+  ctx.fillStyle=amber; ctx.fillRect(-12,-9,4,8); ctx.fillRect(8,-9,4,8);
+  // eye
+  ctx.fillStyle='#1c130c'; ctx.fillRect(3,-3,2.4,2.4);
+  ctx.restore();
+  arm(armSwing, hood);
+
+  ctx.restore();
+
+  function leg(sw,col){
+    ctx.save(); ctx.translate(0,-18); ctx.rotate(sw*0.6);
+    ctx.fillStyle=col; rrect(-4,0,8,18,3); ctx.fill();
+    ctx.fillStyle='#2a1a12'; rrect(-5,16,11,5,2); ctx.fill();
+    ctx.restore();
+  }
+  function arm(sw,col){
+    ctx.save(); ctx.translate(0,-42); ctx.rotate(sw*0.7);
+    ctx.fillStyle=col; rrect(-3,0,7,18,3); ctx.fill();
+    ctx.fillStyle=skin; ctx.beginPath(); ctx.arc(0.5,18,3.4,0,TAU); ctx.fill();
+    ctx.restore();
+  }
+}
+function drawSpeedLines(){
+  if(G.speed<48) return;
+  const n=Math.floor((G.speed-40)/6);
+  ctx.save(); ctx.strokeStyle='rgba(255,255,255,.10)'; ctx.lineWidth=2;
+  for(let i=0;i<n;i++){
+    const yy=(G.time*900 + i*123)% (H*0.7) + HORIZON;
+    const xx=(i%2? W*0.12: W*0.88) + Math.sin(i)*10;
+    ctx.beginPath(); ctx.moveTo(xx,yy); ctx.lineTo(xx,yy+22); ctx.stroke();
+  }
+  ctx.restore();
+}
+function mix(a,b,t){
+  const pa=hx(a), pb=hx(b);
+  return `rgb(${Math.round(lerp(pa[0],pb[0],t))},${Math.round(lerp(pa[1],pb[1],t))},${Math.round(lerp(pa[2],pb[2],t))})`;
+}
+function hx(c){ c=c.replace('#',''); return [parseInt(c.slice(0,2),16),parseInt(c.slice(2,4),16),parseInt(c.slice(4,6),16)]; }
+function rrect(x,y,w,h,r){ r=Math.min(r,w/2,h/2); ctx.beginPath();
+  ctx.moveTo(x+r,y); ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r);
+  ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); ctx.closePath(); }
+
+function render(){
+  ctx.save();
+  if(shake>0) ctx.translate(rand(-shake,shake),rand(-shake,shake));
+  drawSky();
+  drawRoad();
+  drawSpeedLines();
+  drawEntities();
+  drawParts();
+  if(state===ST.PLAY||state===ST.PAUSE||state===ST.DEAD) drawPlayer();
+  drawFloats();
+  ctx.restore();
+  // hit vignette
+  if(G.hitFlash>0){ ctx.save(); ctx.globalAlpha=clamp(G.hitFlash,0,0.6);
+    ctx.fillStyle='rgba(224,83,58,0.5)'; ctx.fillRect(0,0,W,H); ctx.restore(); }
+}
+
+/* ------------------------------------------------------------------ HUD ---- */
+const hud = {
+  el:    document.getElementById('hud'),
+  score: document.getElementById('score'),
+  best:  document.getElementById('bestline'),
+  mult:  document.getElementById('mult'),
+  hcnt:  document.getElementById('hcnt'),
+  conn:  document.getElementById('connfill'),
+  connWrap: document.querySelector('.conn-wrap'),
+  combo: document.getElementById('combo'),
+  bumpMult(){ this.mult.classList.add('pop'); clearTimeout(this._mt); this._mt=setTimeout(()=>this.mult.classList.remove('pop'),130); },
+};
+function refreshHud(){
+  hud.score.textContent = Math.floor(G.score);
+  hud.best.textContent  = 'best '+Store.best;
+  hud.mult.textContent  = '×'+G.mult;
+  hud.hcnt.textContent  = G.hearts;
+  hud.conn.style.width  = (G.warm>0? 100 : G.conn)+'%';
+}
+function showCombo(c){
+  hud.combo.textContent = c+' COMBO!';
+  hud.combo.classList.remove('show'); void hud.combo.offsetWidth; hud.combo.classList.add('show');
+}
+
+/* -------------------------------------------------------------- lifecycle -- */
+function startGame(){
+  Sound.resume(); if(Store.music) Sound.startMusic();
+  ents.length=0; parts.length=0; floats.length=0;
+  Object.assign(G,{ speed:SPEED0, dist:0, score:0, hearts:0, combo:0, bestCombo:0,
+    conn:0, warm:0, magnet:0, shield:false, shieldT:0, rowTimer:0, time:0, mult:1, hitFlash:0, started:true });
+  Object.assign(player,{ lane:1, lanePos:1, jumpT:-1, slideT:0, run:0, lean:0, dead:false });
+  hud.connWrap.classList.remove('warm');
+  state=ST.PLAY;
+  document.getElementById('menu').classList.add('hide');
+  document.getElementById('over').classList.add('hide');
+  document.getElementById('pause').classList.add('hide');
+  hud.el.classList.remove('hide');
+  refreshHud();
+  // brief touch hint on coarse pointers
+  if(window.matchMedia && window.matchMedia('(pointer:coarse)').matches){
+    const sh=document.getElementById('swipehint'); sh.classList.remove('hide');
+    setTimeout(()=>sh.classList.add('hide'),2600);
+  }
+}
+function die(){
+  state=ST.DEAD; player.dead=true; Sound.dead(); Sound.stopMusic();
+  Store.addHearts(G.hearts);
+  const isBest=Store.saveBest(Math.floor(G.score));
+  setTimeout(()=>{
+    document.getElementById('finalScore').textContent=Math.floor(G.score);
+    document.getElementById('finalBest').textContent=Store.best;
+    document.getElementById('finalHearts').textContent=G.hearts;
+    document.getElementById('totalHearts').textContent=Store.total;
+    document.getElementById('newbest').classList.toggle('hide',!isBest);
+    const good=G.score>=Math.max(400,Store.best*0.6);
+    document.getElementById('overTitle').textContent = isBest? 'she stayed on the line.' : (good?'still figuring it out.':'she logged off.');
+    document.getElementById('overLine').textContent = pick(good
+      ? ['"told you, le singe."','restraint reads louder than noise.','another night, another attempt.']
+      : ['"whatever lol."','the monkeys won this round.','some people arrive like unfinished songs.']);
+    document.getElementById('overPortrait').innerHTML = Characters.svg('lou', isBest?'laugh':(good?'soft':'cry'));
+    hud.el.classList.add('hide');
+    document.getElementById('over').classList.remove('hide');
+  }, 650);
+}
+function togglePause(){
+  if(state===ST.PLAY){ state=ST.PAUSE; document.getElementById('pause').classList.remove('hide'); Sound.stopMusic(); }
+  else if(state===ST.PAUSE){ state=ST.PLAY; document.getElementById('pause').classList.add('hide'); if(Store.music) Sound.startMusic(); }
+}
+function toMenu(){
+  state=ST.MENU; Sound.stopMusic();
+  document.getElementById('over').classList.add('hide');
+  document.getElementById('pause').classList.add('hide');
+  hud.el.classList.add('hide');
+  document.getElementById('menu').classList.remove('hide');
+  buildMenu();
+}
+
+/* ------------------------------------------------------------------ menu --- */
+function buildMenu(){
+  document.getElementById('menuPortrait').innerHTML = Characters.svg('lou','laugh');
+  const coarse = window.matchMedia && window.matchMedia('(pointer:coarse)').matches;
+  document.getElementById('controls').innerHTML = coarse
+    ? 'swipe <b>← →</b> lane · <b>↑</b> jump · <b>↓</b> slide · tap to jump'
+    : '<kbd>←</kbd><kbd>→</kbd> lane &nbsp; <kbd>↑</kbd>/<kbd>space</kbd> jump &nbsp; <kbd>↓</kbd> slide &nbsp; <kbd>P</kbd> pause';
+  document.getElementById('menuBest').textContent =
+    Store.best>0 ? `best ${Store.best}  ·  💙 ${Store.total} collected` : '';
+  const mb=document.getElementById('musicbtn'); mb.textContent='♪ music: '+(Store.music?'on':'off');
+}
+
+/* ------------------------------------------------------------------ loop --- */
+let last=performance.now();
+function frame(now){
+  let dt=(now-last)/1000; last=now; if(dt>0.05) dt=0.05;
+  if(state===ST.PLAY){ update(dt); refreshHud(); }
+  else { updateParts(dt); updateFloats(dt); if(shake>0) shake*=0.86; G.time+=dt; player.run+=dt*2; }
+  render();
+  requestAnimationFrame(frame);
+}
+
+/* --------------------------------------------------------------- buttons --- */
+document.getElementById('playbtn').addEventListener('click', startGame);
+document.getElementById('againbtn').addEventListener('click', startGame);
+document.getElementById('menubtn').addEventListener('click', toMenu);
+document.getElementById('pausebtn').addEventListener('click', togglePause);
+document.getElementById('resumebtn').addEventListener('click', togglePause);
+document.getElementById('quitbtn').addEventListener('click', toMenu);
+document.getElementById('musicbtn').addEventListener('click', ()=>{
+  Store.setMusic(!Store.music); Sound.resume();
+  if(Store.music){ Sound.startMusic(); } else { Sound.stopMusic(); }
+  document.getElementById('musicbtn').textContent='♪ music: '+(Store.music?'on':'off');
 });
-function bindPad(){
-  const pad=document.getElementById('pad');
-  if(isTouch) pad.classList.add('show');
-  const L=document.getElementById('padL'),R=document.getElementById('padR'),A=document.getElementById('padA');
-  const dn=(set)=>(e)=>{e.preventDefault();set(true);};
-  const up=(set)=>(e)=>{e.preventDefault();set(false);};
-  L.ontouchstart=L.onmousedown=dn(v=>input.left=v); L.ontouchend=L.onmouseup=up(v=>input.left=v);
-  R.ontouchstart=R.onmousedown=dn(v=>input.right=v); R.ontouchend=R.onmouseup=up(v=>input.right=v);
-  A.ontouchstart=A.onmousedown=(e)=>{e.preventDefault();if(!input.jump)input.jumpEdge=true;input.jump=true;if(!input.act)input.actEdge=true;input.act=true;};
-  A.ontouchend=(e)=>{e.preventDefault();input.jump=false;input.act=false;};
-}
-bindPad();
 
-let rafId=null, loopFn=null;
-function startLoop(fn){ stopLoop(); loopFn=fn; const step=(t)=>{ if(!loopFn)return; loopFn(t); input.jumpEdge=false; input.actEdge=false; rafId=requestAnimationFrame(step);}; rafId=requestAnimationFrame(step); }
-function stopLoop(){ if(rafId)cancelAnimationFrame(rafId); rafId=null; loopFn=null; }
+/* ------------------------------------------------------------------ boot --- */
+resize();
+buildMenu();
+requestAnimationFrame(frame);
 
-function showCanvasMsg(title,sub,btnLabel,cb){
-  const div=document.createElement('div');
-  div.className='center-msg';
-  div.innerHTML=`<h2>${title}</h2><p>${sub}</p>`;
-  const b=document.createElement('button');b.className='start-btn';b.textContent=btnLabel;
-  b.onclick=()=>{Sound.ui();div.remove();cb();};
-  div.appendChild(b);
-  document.getElementById('game-wrap').appendChild(div);
-}
-
-// pixel-person drawing helper
-function drawRunner(x,y,col,hair,w=26,h=40,run=0,facing=1){
-  ctx2.save();ctx2.translate(x,y);
-  ctx2.fillStyle='#23202b';
-  const swing=Math.sin(run)*7;
-  ctx2.fillRect(-7, h-14, 6, 14+ (facing>0?swing:-swing));
-  ctx2.fillRect(2,  h-14, 6, 14- (facing>0?swing:-swing));
-  ctx2.fillStyle=col;
-  ctx2.fillRect(-9,8,18,h-20);
-  ctx2.fillStyle='#f0d7c2';
-  ctx2.fillRect(-7,-6,14,15);
-  ctx2.fillStyle=hair;
-  ctx2.fillRect(-8,-9,16,7);
-  ctx2.fillRect(facing>0?5:-8,-9,3,12);
-  ctx2.fillStyle=col;
-  ctx2.fillRect(facing>0?6:-9, 12, 5, 16+Math.sin(run+1)*4);
-  ctx2.restore();
-}
-
-/* ============================================================
-   GAME 1 & 2 — RUNNER: Lou races Elias
-   ============================================================ */
-const RunnerGame=(function(){
-  let level=1, st;
-  function start(lvl){
-    level=lvl||1;
-    show('game');
-    document.getElementById('meter').classList.add('show');
-    document.getElementById('meter').classList.remove('with-aud');
-    banner.textContent = level===1
-      ? "RACE — Lou vs Elias // 'loser admits feelings first'"
-      : "RACE 2 — across the frozen lake";
-    help.innerHTML = isTouch
-      ? "tap ● to jump · reach the finish before Elias"
-      : "SPACE / ↑ = jump · reach the finish before Elias · hold to keep pace";
-    init();
-    showCanvasMsg(level===1?"THE FIRST STREAM":"FÖRSTA RESAN",
-      level===1?"Out-run the quiet boy across the rooftops.":"Race him across the ice. Don't slip into silence.",
-      "▶ run", ()=>startLoop(frame));
-  }
-  function init(){
-    st={
-      lou:{x:120,y:300,vy:0,onGround:true,run:0},
-      dist:0, finish:2600, speed:4.2, baseSpeed:4.2,
-      obstacles:[], spawn:0,
-      eliasDist:0, eliasSpeed: level===1?3.9:4.05,
-      over:false, won:false, slipped:0,
-    };
-    let d=600;
-    while(d<st.finish-200){ st.obstacles.push({d, hit:false, kind: Math.random()<.5?'gap':'box'}); d+=260+Math.random()*200; }
-  }
-  function frame(){
-    const s=st;
-    ctx2.clearRect(0,0,W,H);
-    const g=ctx2.createLinearGradient(0,0,0,H);
-    if(level===1){ g.addColorStop(0,'#241a2e');g.addColorStop(1,'#3a1f1a'); }
-    else { g.addColorStop(0,'#16202e');g.addColorStop(1,'#1a2535'); }
-    ctx2.fillStyle=g;ctx2.fillRect(0,0,W,H);
-    ctx2.fillStyle='rgba(255,255,255,.15)';
-    for(let i=0;i<40;i++){ const px=(i*120 - s.dist*0.3)%(W+40); ctx2.fillRect((px+W+40)%(W+40)-20, 30+(i*53)%140, 2,2); }
-
-    if(!s.over){
-      s.dist += s.speed;
-      s.eliasDist += s.eliasSpeed;
-      s.lou.run += s.speed*0.05;
-      const L=s.lou;
-      if(input.jumpEdge && L.onGround){ L.vy=-12; L.onGround=false; Sound.blip(520,.07,'square',.05); }
-      L.vy+=0.6; L.y+=L.vy;
-      if(L.y>=300){ L.y=300; L.vy=0; L.onGround=true; }
-      for(const o of s.obstacles){
-        const screenX = 120 + (o.d - s.dist);
-        if(!o.hit && screenX<150 && screenX>90){
-          if(L.onGround && L.y>290){
-            o.hit=true; s.speed=Math.max(2.4,s.speed-1.4); s.slipped++; Sound.bad();
-            banner.textContent = level===1? "tripped on a cable!" : "slipped on the ice!";
-          } else { o.hit=true; s.speed=Math.min(s.baseSpeed+0.6,s.speed+0.2); Sound.blip(700,.05,'square',.04);}
-        }
-      }
-      s.speed += (s.baseSpeed - s.speed)*0.01;
-      if(s.dist>=s.finish){ s.over=true; s.won=true; finishRace(true); }
-      else if(s.eliasDist>=s.finish){ s.over=true; s.won=false; finishRace(false); }
-    }
-
-    ctx2.fillStyle = level===1? '#1a141f' : '#223247';
-    ctx2.fillRect(0,340,W,H-340);
-    ctx2.strokeStyle= level===1?'rgba(242,193,78,.25)':'rgba(184,176,207,.3)';
-    ctx2.beginPath();ctx2.moveTo(0,340);ctx2.lineTo(W,340);ctx2.stroke();
-
-    for(const o of s.obstacles){
-      const sx=120+(o.d - s.dist);
-      if(sx<-40||sx>W+40)continue;
-      if(o.kind==='box'){ ctx2.fillStyle=o.hit?'#555':'#7a4'; ctx2.fillRect(sx-12,316,24,24);}
-      else { ctx2.fillStyle='#0a0810'; ctx2.fillRect(sx-16,340,32,40);}
-    }
-    const fsx=120+(s.finish - s.dist);
-    if(fsx<W+60){ for(let i=0;i<8;i++){ ctx2.fillStyle=i%2?'#fff':'#000'; ctx2.fillRect(fsx, 250+i*12, 14,12);} }
-
-    const gap = (s.dist - s.eliasDist);
-    const eliasScreenX = 120 - gap*0.6;
-    drawRunner(Math.max(20,Math.min(W-40,eliasScreenX)), 300, '#6e93bd', '#e0c98a', 26,40, s.lou.run*0.9, 1);
-    drawRunner(120, s.lou.y, '#d8693b', '#6b3a22', 26,40, s.lou.run, 1);
-
-    ctx2.fillStyle='#f4ead5';ctx2.font='13px monospace';
-    ctx2.fillText(gap>=0? "Lou leads by "+Math.round(gap) : "Elias leads by "+Math.round(-gap), 16,24);
-    ctx2.fillText(Math.round(Math.min(100,s.dist/s.finish*100))+"%",W-60,24);
-  }
-  function finishRace(won){
-    stopLoop();
-    if(won){ bump(8); Sound.good(); }
-    else { bump(-4); Sound.bad(); }
-    setTimeout(()=>{
-      showCanvasMsg(
-        won? (level===1?"Lou wins. Elias has to admit it first.":"She beats him across the lake."):
-             (level===1?"Elias wins by a step.":"He waits for her at the far shore."),
-        won? "\"told you, le singe.\" He just smiles — which, from him, is a paragraph."
-           : "He doesn't gloat. He offers a hand. Different people, different finish lines.",
-        "next ▸",
-        ()=> MonkeyFight.start(level)
-      );
-    },700);
-  }
-  return {start};
-})();
-
-/* ============================================================
-   MONKEY FIGHT — gremlins of "you're too much"
-   ============================================================ */
-const MonkeyFight=(function(){
-  let level=1, st;
-  function start(lvl){
-    level=lvl||1;
-    show('game');
-    document.getElementById('meter').classList.add('show');
-    document.getElementById('meter').classList.remove('with-aud');
-    banner.textContent = "MONKEY FIGHT — the gremlins of 'you're too much'";
-    help.innerHTML = isTouch
-      ? "◀ ▶ move · ● punch · clear the monkeys"
-      : "← → move · X / Enter = punch · clear the wave";
-    init();
-    showCanvasMsg("INTERLUDE — LES SINGES",
-      "Between rounds, the monkeys come: every intrusive thought that whispers <i>you're too loud, too much, impossible to love</i>. Lou punches back.",
-      "▶ fight", ()=>startLoop(frame));
-  }
-  function init(){
-    st={ lou:{x:W/2,facing:1,punch:0,run:0}, monkeys:[], spawn:0, killed:0,
-      target: level===1?8:11, hp:3, over:false, win:false, t:0, hurtCD:0 };
-  }
-  function spawnMonkey(){
-    const fromLeft=Math.random()<.5;
-    st.monkeys.push({ x: fromLeft? -30 : W+30, y:300+Math.random()*20-10,
-      dir: fromLeft?1:-1, spd:1+Math.random()*1.2+level*0.2, bob:Math.random()*6, alive:true, hitFlash:0 });
-  }
-  function frame(){
-    const s=st; s.t++;
-    ctx2.clearRect(0,0,W,H);
-    const g=ctx2.createLinearGradient(0,0,0,H);
-    g.addColorStop(0,'#2a1620');g.addColorStop(1,'#1a1018');
-    ctx2.fillStyle=g;ctx2.fillRect(0,0,W,H);
-    ctx2.fillStyle='#140d14';ctx2.fillRect(0,340,W,H-340);
-
-    if(!s.over){
-      s.spawn--;
-      if(s.spawn<=0 && (s.killed+s.monkeys.filter(m=>m.alive).length)<s.target){
-        spawnMonkey(); s.spawn=70-level*8 - Math.random()*20;
-      }
-      const L=s.lou;
-      if(input.left){ L.x-=4.5; L.facing=-1; }
-      if(input.right){ L.x+=4.5; L.facing=1; }
-      L.x=Math.max(30,Math.min(W-30,L.x));
-      L.run += (input.left||input.right)?0.2:0;
-      if(s.hurtCD>0)s.hurtCD--;
-      if(input.actEdge && L.punch<=0){ L.punch=12; Sound.hit();
-        for(const m of s.monkeys){
-          if(!m.alive)continue;
-          const inFront = (L.facing>0 && m.x>L.x && m.x<L.x+70) || (L.facing<0 && m.x<L.x && m.x>L.x-70);
-          if(inFront && Math.abs(m.y-300)<40){ m.alive=false; m.hitFlash=14; s.killed++; Sound.blip(300,.08,'square',.06); bump(0.6); }
-        }
-      }
-      if(L.punch>0)L.punch--;
-      for(const m of s.monkeys){
-        if(!m.alive){ m.hitFlash--; continue; }
-        m.x += m.dir*m.spd; m.bob+=0.2;
-        if(Math.abs(m.x-L.x)<26 && s.hurtCD<=0){
-          s.hp--; s.hurtCD=50; Sound.bad(); m.alive=false; m.hitFlash=10;
-          if(s.hp<=0){ s.over=true; s.win=false; endFight(); }
-        }
-      }
-      s.monkeys=s.monkeys.filter(m=>m.alive||m.hitFlash>0);
-      if(s.killed>=s.target){ s.over=true; s.win=true; endFight(); }
-    }
-
-    ctx2.strokeStyle='rgba(224,163,163,.3)';ctx2.beginPath();ctx2.moveTo(0,340);ctx2.lineTo(W,340);ctx2.stroke();
-    for(const m of s.monkeys){
-      ctx2.save();ctx2.translate(m.x, m.y+Math.sin(m.bob)*4);
-      if(m.hitFlash>0){ ctx2.globalAlpha=Math.max(0,m.hitFlash/14); ctx2.fillStyle='#fff';
-        ctx2.font='22px serif';ctx2.fillText('💥',-10,0);ctx2.restore();continue;}
-      ctx2.font='30px serif';ctx2.fillText('🐒',-16,8);
-      ctx2.restore();
-    }
-    drawFighter(s.lou.x,300,s.lou.facing,s.lou.punch>6, s.hurtCD>40);
-    ctx2.fillStyle='#f4ead5';ctx2.font='14px monospace';
-    ctx2.fillText("monkeys cleared: "+s.killed+" / "+s.target, 16,26);
-    ctx2.fillText("❤".repeat(Math.max(0,s.hp))+"·".repeat(3-Math.max(0,s.hp)), W-70,26);
-  }
-  function drawFighter(x,y,facing,punching,hurt){
-    ctx2.save();ctx2.translate(x,y);ctx2.scale(facing,1);
-    if(hurt && Math.floor(performance.now()/100)%2) ctx2.globalAlpha=.5;
-    ctx2.fillStyle='#23202b';ctx2.fillRect(-7,26,6,14);ctx2.fillRect(2,26,6,14);
-    ctx2.fillStyle='#d8693b';ctx2.fillRect(-9,8,18,20);
-    ctx2.fillStyle='#f0d7c2';ctx2.fillRect(-7,-6,14,15);
-    ctx2.fillStyle='#6b3a22';ctx2.fillRect(-8,-9,16,7);
-    ctx2.fillStyle='#d8693b';
-    if(punching){ ctx2.fillRect(8,10,24,7); ctx2.fillStyle='#f0d7c2';ctx2.fillRect(30,9,9,9);}
-    else { ctx2.fillRect(6,12,6,16); }
-    ctx2.restore();
-  }
-  function endFight(){
-    stopLoop();
-    const win=st.win;
-    if(win){bump(6);Sound.good();}else{bump(-3);Sound.bad();}
-    setTimeout(()=>{
-      const cont = level===1? ()=>story.go('c2') : ()=>story.go('c4');
-      showCanvasMsg(
-        win?"The monkeys scatter.":"The monkeys win this round.",
-        win? "The voices quiet — for now. Elias texts: <span style='color:#6e93bd'>\"you ok? brought you water (metaphorically).\"</span>"
-           : "She's overwhelmed. But Elias stays on the line anyway. That's the whole point.",
-        "continue the story ▸",
-        cont
-      );
-    },700);
-  }
-  return {start};
-})();
-
-/* ============================================================
-   FINAL — THE PHONE CALL + endings
-   ============================================================ */
-const PhoneCall=(function(){
-  let waited=0, timer=null, monoTimer=null;
-  const monologues=[
-    "Lou: \"What if his real voice changes everything?\"",
-    "Lou: \"What if I'm only good at this from behind a screen?\"",
-    "Elias: \"Pick up. Or don't. I'll still be here either way.\"",
-    "Lou: \"He'd actually still be here. That's the scary part.\"",
-    "Lou: \"…okay. okay. breathe.\"",
-  ];
-  function start(){
-    show('vn');
-    document.getElementById('meter').classList.remove('show');
-    const vn=document.getElementById('vn');
-    vn.innerHTML='';
-    const c=document.createElement('div');
-    c.id='callscreen';c.className='center-msg';c.style.background='#05040a';
-    c.innerHTML=`
-      <div class="call-ring">📞</div>
-      <div class="call-name">Elias is calling…</div>
-      <div class="call-sub">pixel stars drift. lo-fi hums. the screen is almost black.</div>
-      <div class="call-monologue" id="mono">${monologues[0]}</div>
-      <div class="call-btns"><button class="call-btn answer" id="answer">📞</button></div>
-      <p class="mono" style="margin-top:16px;color:#6e93bd;font-size:11px">(you can wait. the longer you wait, the more she thinks.)</p>`;
-    vn.appendChild(c);
-    Sound.ring();
-    timer=setInterval(()=>{Sound.ring();},2600);
-    let mi=0;
-    monoTimer=setInterval(()=>{ mi=(mi+1); waited++; if(mi<monologues.length){ document.getElementById('mono').textContent=monologues[mi]; } },2600);
-    document.getElementById('answer').onclick=answer;
-  }
-  function answer(){
-    clearInterval(timer);clearInterval(monoTimer);Sound.ui();
-    const vn=document.getElementById('vn');
-    const callsHim = S.flags.singe==='ask'
-      ? "She almost says \"mon petit singe\" — then doesn't. \"Hey. …Elias.\" His actual name. From her, that's a whole confession."
-      : "\"…hey, mon petit singe.\" The name he never liked. He smiles anyway. It's hers, so he keeps it.";
-    vn.innerHTML=`<div class="center-msg" style="background:#070510">
-      <div style="width:190px;margin:0 auto">${Characters.svg('elias','warm')}</div>
-      <h2 class="elias">"${S.flags.singe==='ask'?'Hey. …Elias.':'mon petit singe.'}"</h2>
-      <p>${callsHim}</p>
-      <button class="start-btn" id="toEnd">see how it ends ▸</button></div>`;
-    setBlend(Math.max(.6,S.connection/100));
-    document.getElementById('toEnd').onclick=ending;
-  }
-  function ending(){
-    Sound.ui();
-    const vn=document.getElementById('vn');
-    let title,emoji,body,bg,cls;
-    if(S.connection>=72){
-      title="ENSEMBLE À STOCKHOLM 🔥"; emoji="🔥"; cls="lou";
-      bg="linear-gradient(160deg,#3a1f1a,#1a2535)";
-      body="The hopeful ending — not the perfect one. Lou will never love quietly, and she'll never love easy. But she lets Elias closer than she lets the forty thousand, and from her, that's everything. He still doesn't fully understand her. He stays anyway.<br><br><em>Final image: the two of them assembling IKEA furniture, arguing lovingly about the instructions. She calls him singe. He lets it go.</em>";
-    } else if(S.connection>=40){
-      title="STILL FIGURING IT OUT ❄"; emoji="❄"; cls="elias";
-      bg="linear-gradient(160deg,#1a2535,#2a1d2e)";
-      body="The honest ending. He loves her more than she loves him, and they both know it, and they keep going anyway. Some nights that feels like enough. Some nights it doesn't.<br><br><em>The last scene isn't dramatic. Just: another phone call. Another night. Another attempt.</em>";
-    } else {
-      title="WE BURNED BEAUTIFULLY 🥀"; emoji="🥀"; cls="narr";
-      bg="linear-gradient(160deg,#241a2e,#0d0b12)";
-      body="The bittersweet ending. He gave more than he got, and one day that ran out. Years later, certain songs still hurt. Certain notification sounds still feel dangerous.<br><br><b>\"Some people arrive in your life like unfinished songs.\"</b>";
-    }
-    const endFace = S.connection>=72? Characters.two('soft','warm')
-      : S.connection>=40? Characters.two('neutral','soft')
-      : Characters.svg('elias','sad');
-    const fw = S.connection>=40? 330 : 180;
-    vn.innerHTML=`<div class="center-msg" style="background:${bg}">
-      <div style="width:${fw}px;max-width:80vw;margin:0 auto 4px">${endFace}</div>
-      <h2 class="${cls}">${title}</h2>
-      <p style="max-width:580px">${body}</p>
-      <p class="mono" style="color:#b8b0cf;font-size:12px;margin-top:8px">connexion ${Math.round(S.connection)}/100 · audience ${Math.round(S.audience)}/100 · quiz ${S.flags.quiz}/4 · deleted ${S.flags.deleted}${S.flags.vodUnlocked?' · 🐈‍⬛ VOD':''}</p>
-      <button class="start-btn" id="roll">roll credits ▸</button>
-    </div>`;
-    document.getElementById('roll').onclick=credits;
-  }
-  function credits(){
-    Sound.ui();
-    const vn=document.getElementById('vn');
-    vn.innerHTML=`<div id="credits" class="center-msg" style="background:#070510">
-      <div class="credit-roll">
-        <h2 style="color:#f2c14e">WHEN YOU CALL ME, SINGE</h2><br>
-        a bilingual interactive love story<br><br>
-        <b class="lou">LOU</b> — loud, quick to anger, only half in it<br>
-        <b class="elias">ELIAS</b> — quiet, all the way in, can't read her<br>
-        <b>BAUDELAIRE</b> — the cat, asleep<br><br>
-        ❝ What if love is not perfect understanding?<br>What if it is patient translation? ❞<br><br>
-        not soulmates. not destiny. not even fair.<br>
-        just: staying on the call.<br><br>
-        merci · tack · thank you for staying.<br><br>
-        ♪ the music player is still playing.
-      </div></div>`;
-    setTimeout(()=>{
-      const n=document.createElement('div');
-      n.className='sub-notif';
-      n.innerHTML=`<b>EliasNordicBlue</b> subscribed for 36 months.<br><span>"still here."</span>`;
-      document.body.appendChild(n);
-      requestAnimationFrame(()=>n.classList.add('show'));
-      Sound.good();
-    },9000);
-  }
-  return {start};
-})();
-
-/* init meters */
-document.getElementById('meterfill').style.width=S.connection+'%';
-document.getElementById('audfill').style.width=S.audience+'%';
-setBlend(S.connection/100);
+/* expose for the headless smoke test */
+window.Game = {
+  start: startGame, toMenu, pause: togglePause,
+  get state(){ return state; },
+  get G(){ return G; }, get player(){ return player; }, get ents(){ return ents; },
+  _spawn: spawnRow, _resize: resize,
+};
