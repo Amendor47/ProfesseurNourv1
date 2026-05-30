@@ -125,7 +125,10 @@ try{
 }catch(e){ ok(false,'engine.js threw on load: '+(e.stack||e)); }
 
 function key(code){ (winL.keydown||[]).forEach(fn=>fn({code,key:code,preventDefault(){},repeat:false})); }
-function pump(frames){ let t=performance.now(); for(let i=0;i<frames && rafQ.length;i++){ const cb=rafQ.shift(); t+=16; try{cb(t);}catch(e){ throw e; } } }
+// Single monotonically increasing clock across all pumps — a real browser's
+// rAF timestamps never go backwards, so the engine always sees positive dt.
+let clock = 1000;
+function pump(frames){ for(let i=0;i<frames && rafQ.length;i++){ const cb=rafQ.shift(); clock+=16; cb(clock); } }
 
 if(G){
   // the boot already scheduled one frame; start a run
