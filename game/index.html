@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>WHEN YOU CALL ME, SINGE</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400;1,6..72,500&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+<div id="crt"></div>
+
+<!-- dual meter: connexion (drives ending) + audience (shown on streams) -->
+<div id="meter">
+  <div class="row con"><span class="ml">connexion</span><div class="bar"><div class="fill" id="meterfill"></div></div></div>
+  <div class="row aud"><span class="ml">audience</span><div class="bar"><div class="afill" id="audfill"></div></div></div>
+</div>
+<div class="unlock-toast" id="toast"></div>
+
+<div id="stage">
+
+  <!-- ===================== LANDING ===================== -->
+  <section id="landing" class="screen active" data-screen-label="Landing">
+    <div class="hud-bits">
+      <div class="bit aim">lou_online — streaming</div>
+      <div class="bit tw" id="twnotif">🔔 EliasNordicBlue is now following</div>
+      <div class="bit ts">last seen 03:14 — "whatever lol"</div>
+      <div class="bit music" id="musicwidget">♪ lo-fi // paused</div>
+    </div>
+    <div class="nokia ring" id="nokia">
+      <div class="scr">incoming…<br>+33 ?? ?? ?? ??<br><br>"singe"</div>
+      <div class="keys"><span></span><span></span><span></span><span></span><span></span><span></span></div>
+    </div>
+    <h1 id="title"></h1>
+    <div id="loucam" title="loupiote — live"></div>
+    <p class="tag">A sleepless Swede falls hard for a French streamer<br>who never quite falls back. A love story in two languages.</p>
+    <button class="start-btn" id="startbtn" disabled style="opacity:.4">…</button>
+    <div id="baudelaire" title="a sleeping cat">🐈‍⬛<span class="z">z z</span></div>
+  </section>
+
+  <!-- ===================== VISUAL NOVEL ===================== -->
+  <section id="vn" class="screen" data-screen-label="Story">
+    <div id="vn-art"><div id="portrait"></div><div class="vn-prop" id="vnemoji">🎧</div><div class="snow" id="snow"></div></div>
+    <div id="vn-box">
+      <div id="vn-chapter">PROLOGUE</div>
+      <div id="vn-speaker" class="narr">—</div>
+      <div id="vn-text"></div>
+      <div id="vn-choices"></div>
+      <button id="vn-next">continue</button>
+    </div>
+  </section>
+
+  <!-- ===================== CANVAS GAME ===================== -->
+  <section id="game-wrap" class="screen" data-screen-label="Minigame">
+    <div id="game-banner"></div>
+    <canvas id="cv" width="900" height="460"></canvas>
+    <div id="game-help"></div>
+  </section>
+
+</div>
+
+<!-- mobile pad -->
+<div id="pad">
+  <div class="pad-btn" id="padL">◀</div>
+  <div class="pad-btn" id="padA">●</div>
+  <div class="pad-btn" id="padR">▶</div>
+</div>
+
+<script src="characters.js"></script>
+<script src="engine.js"></script>
+</body>
+</html>

@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no" />
+<title>When You Call Me, Singe</title>
+<meta name="theme-color" content="#0d0b12" />
+<style>
+  html,body{margin:0;height:100%;background:#0d0b12;color:#e3d6bf;
+    font-family:"JetBrains Mono",ui-monospace,monospace;}
+  /* The game is a self-contained build under /game. We load it full-bleed. */
+  #stage{position:fixed;inset:0;border:0;width:100%;height:100%;display:block;background:#0d0b12;}
+  /* graceful fallback if iframe is blocked (e.g. some file:// contexts) */
+  #fallback{position:fixed;inset:0;display:flex;flex-direction:column;gap:14px;
+    align-items:center;justify-content:center;text-align:center;padding:24px;}
+  #fallback a{color:#f2c14e;}
+</style>
+</head>
+<body>
+  <iframe id="stage" src="game/index.html" title="When You Call Me, Singe" allow="autoplay"></iframe>
+  <noscript><div id="fallback">This game needs JavaScript. Open <a href="game/index.html">game/index.html</a>.</div></noscript>
+</body>
+</html>

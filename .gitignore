@@ -1,0 +1,11 @@
+# Node tooling used only for headless testing — never ship to the game build
+node_modules/
+package-lock.json
+npm-debug.log*
+
+# Test artifacts
+game/smoke-report.txt
+
+# OS / editor cruft
+.DS_Store
+*.swp
